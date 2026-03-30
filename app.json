@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "RemindApp",
+    "slug": "remind-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F9F9F9"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.remindapp.app",
+      "infoPlist": {
+        "NSUserNotificationUsageDescription": "Ứng dụng cần quyền thông báo để nhắc lịch công việc của bạn."
+      }
+    },
+    "android": {
+      "package": "com.remindapp.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F9F9F9"
+      },
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1A73E8",
+          "defaultChannel": "reminders",
+          "sounds": []
+        }
+      ],
+      "expo-sqlite",
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}
