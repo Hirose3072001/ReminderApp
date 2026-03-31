@@ -32,9 +32,13 @@ export const ScheduleScreen = () => {
   const [selectedItem, setSelectedItem] = useState<Reminder | null>(null);
 
   const { reminders, loadReminders } = useReminderStore();
+  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     loadReminders();
+    // Refresh current time every minute for the timeline indicator
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
   }, [loadReminders]);
 
   const filteredReminders = reminders
@@ -210,8 +214,7 @@ export const ScheduleScreen = () => {
   const renderTimeline = () => {
     const hours = Array.from({ length: 25 }).map((_, i) => i); // 00:00 to 24:00
     const HOUR_HEIGHT = 100;
-    const now = new Date();
-    const isTodaySelected = isToday(selectedDate);
+    const isTodaySelected = isToday(new Date(selectedDate));
     const currentHour = now.getHours();
     const currentMinutes = now.getMinutes();
 
