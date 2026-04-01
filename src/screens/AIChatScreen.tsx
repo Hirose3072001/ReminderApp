@@ -7,43 +7,29 @@ import { MaterialIcons } from '@expo/vector-icons';
 export const AIChatScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.aiAvatar}>
           <MaterialIcons name="smart-toy" size={24} color={Colors.primary} />
         </View>
         <Text style={styles.headerTitle}>Trợ lý AI</Text>
-        <View style={{ width: 40 }} /> {/* Spacer */}
+        <View style={{ width: 40 }} />
       </View>
-
-      {/* Chat Area */}
       <ScrollView contentContainerStyle={styles.chatArea}>
         <Text style={styles.dateStamp}>Hôm nay</Text>
-        
         <View style={styles.botMessage}>
-          <Text style={styles.messageText}>
-            Xin chào! Tôi có thể giúp bạn sắp xếp lịch trình hoặc tạo công việc mới. Hãy thử nói: "{'Lên lịch họp lúc 3h chiều mai'}"
-          </Text>
+          <Text style={styles.messageText}>Xin chào! Tôi có thể giúp bạn sắp xếp lịch trình hoặc tạo công việc mới. Hãy thử nói: "Lên lịch họp lúc 3h chiều mai"</Text>
         </View>
-
         <View style={styles.userMessage}>
-          <Text style={styles.messageTextUser}>
-            Thêm sự kiện đi xem phim tối mai lúc 8h
-          </Text>
+          <Text style={styles.messageTextUser}>Thêm sự kiện đi xem phim tối mai lúc 8h</Text>
         </View>
-        
         <View style={styles.botMessage}>
-          <Text style={styles.messageText}>
-            Đã thêm sự kiện "Xem phim" vào 20:00 ngày mai!
-          </Text>
+          <Text style={styles.messageText}>Đã thêm sự kiện "Xem phim" vào 20:00 ngày mai!</Text>
           <View style={styles.actionChip}>
             <MaterialIcons name="open-in-new" size={14} color={Colors.primary} />
             <Text style={styles.actionChipText}>Xem sự kiện</Text>
           </View>
         </View>
       </ScrollView>
-
-      {/* Input Area */}
       <View style={styles.inputContainer}>
         <TouchableOpacity style={styles.attachBtn}>
           <MaterialIcons name="mic" size={24} color={Colors.outline} />

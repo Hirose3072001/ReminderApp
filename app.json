@@ -2,6 +2,7 @@
   "expo": {
     "name": "RemindApp",
     "slug": "remind-app",
+    "scheme": "remind-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -22,7 +23,8 @@
     "android": {
       "package": "com.remindapp.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
         "backgroundColor": "#F9F9F9"
       },
       "permissions": [
@@ -46,7 +48,9 @@
         }
       ],
       "expo-sqlite",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-secure-store",
+      "expo-web-browser"
     ]
   }
 }

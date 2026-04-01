@@ -17,6 +17,7 @@ import { Colors, FontFamily, FontSize } from '../theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CustomPicker, PickerOption } from '../components/ui/CustomPicker';
 import { useReminderStore } from '../store/useReminderStore';
+import { generateTriggersFromRules } from '../utils/reminderUtils';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -212,36 +213,29 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       const pVal = priority === 'Cao' || priority === 'Khẩn cấp' || priority === 'Nghiêm trọng' ? 'high' : priority === 'Thấp' ? 'low' : 'medium';
       const taskId = isEdit ? editItem!.id : uuidv4();
       
-      let triggerTimes: Date[] = [];
-      if (hasReminder && localReminderRules.length > 0) {
-        localReminderRules.forEach(rule => {
-           const baseDate = (rule.timing === 'Khi bắt đầu' || rule.timing === 'Trước khi bắt đầu') ? new Date(startTime) : new Date(endTime);
-           if (rule.timing === 'Khi bắt đầu' || rule.timing === 'Khi kết thúc') {
-              triggerTimes.push(baseDate);
-           } else {
-              const amount = parseInt(rule.amount) || 0;
-              const multiplier = rule.unit === 'Phút' ? 60000 : rule.unit === 'Giờ' ? 3600000 : 86400000;
-              if (rule.unit === 'Ngày' && rule.timeSlots && rule.timeSlots.length > 0) {
-                 const targetDate = new Date(baseDate.getTime() - (amount * 86400000));
-                 rule.timeSlots.forEach(timeStr => {
-                    const [hrs, mins] = timeStr.split(':').map(Number);
-                    const slotDate = new Date(targetDate);
-                    slotDate.setHours(hrs, mins, 0, 0);
-                    triggerTimes.push(slotDate);
-                 });
-              } else {
-                 triggerTimes.push(new Date(baseDate.getTime() - (amount * multiplier)));
-              }
-           }
-        });
-      }
+      const allGeneratedTriggers = generateTriggersFromRules(
+        hasReminder ? JSON.stringify(localReminderRules) : null,
+        startTime,
+        endTime,
+        title,
+        isEvent ? 'event' : 'task'
+      );
 
+      let triggerTimes = allGeneratedTriggers.map(t => ({ date: t.date, body: t.body }));
+
+      // Sort all triggers to find the most relevant one for the DB feed
+      // We pick the first one that is either in the future OR within the last 24h (to keep it in history)
       const now = Date.now();
-      triggerTimes = triggerTimes.filter(t => t.getTime() > now);
-      triggerTimes.sort((a, b) => a.getTime() - b.getTime());
+      const relevantTriggers = [...triggerTimes]
+        .filter(t => t.date.getTime() > now - 86400000)
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
       
-      const firstReminderTime = triggerTimes.length > 0 ? triggerTimes[0] : null;
+      const firstReminderTime = relevantTriggers.length > 0 ? relevantTriggers[0].date : (triggerTimes.length > 0 ? triggerTimes[0].date : null);
       const reminderTimeStr = firstReminderTime ? format(firstReminderTime, "yyyy-MM-dd'T'HH:mm:ss") : null;
+
+      // Filter for future-only push notifications
+      const futureTriggers = triggerTimes.filter(t => t.date.getTime() > now).sort((a, b) => a.date.getTime() - b.date.getTime());
+      triggerTimes = futureTriggers;
 
       if (isEdit && editItem) {
         editReminder(taskId, {
@@ -276,8 +270,8 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
            await scheduleNotification(
              taskId,
              `🔔 ${title.trim()}`,
-             isEvent ? 'Sắp diễn ra sự kiện' : (isEdit ? 'Cập nhật công việc' : 'Đến giờ làm bài'),
-             t,
+             t.body || (isEvent ? 'Sắp diễn ra sự kiện' : (isEdit ? 'Cập nhật công việc' : 'Đến giờ làm bài')),
+             t.date,
              'none'
            );
         }

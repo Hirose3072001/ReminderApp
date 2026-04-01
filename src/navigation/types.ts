@@ -2,6 +2,7 @@ import { Reminder } from '../database/queries';
 
 export type RootStackParamList = {
   Onboarding: undefined;
+  Login: undefined;
   Main: undefined;
   AddTask: { type: 'task' | 'event'; editItem?: Reminder };
   TaskDetail: { id: string };

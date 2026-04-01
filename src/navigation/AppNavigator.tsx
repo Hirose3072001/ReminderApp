@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -15,6 +15,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ReminderSettingsScreen } from '../screens/ReminderSettingsScreen';
 import { EditReminderPresetScreen } from '../screens/EditReminderPresetScreen';
+import { LoginScreen } from '../screens/LoginScreen';
+import { useAuthStore } from '../store/useAuthStore';
+import { supabase } from '../services/supabase';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -101,23 +104,47 @@ const MainTabs = () => (
   </Tab.Navigator>
 );
 
-export const AppNavigator = () => (
-  <Stack.Navigator
-    initialRouteName="Onboarding"
-    screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
-  >
-    <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-    <Stack.Screen name="Main" component={MainTabs} />
-    <Stack.Screen
-      name="AddTask"
-      component={AddTaskScreen}
-      options={{ animation: 'slide_from_bottom' }}
-    />
-    <Stack.Screen name="TaskDetail" component={TaskDetailScreen} />
-    <Stack.Screen name="ReminderSettings" component={ReminderSettingsScreen} />
-    <Stack.Screen name="EditReminderPreset" component={EditReminderPresetScreen} />
-  </Stack.Navigator>
-);
+export const AppNavigator = () => {
+  const { isAuthenticated, isFirstTime, setSession } = useAuthStore();
+
+  useEffect(() => {
+    // Khôi phục session khi app khởi động
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    // Lắng nghe thay đổi trạng thái auth (login/logout/token refreshed)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return (
+    <Stack.Navigator
+      screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+    >
+      {isFirstTime ? (
+        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+      ) : !isAuthenticated ? (
+        <Stack.Screen name="Login" component={LoginScreen} />
+      ) : (
+        <>
+          <Stack.Screen name="Main" component={MainTabs} />
+          <Stack.Screen
+            name="AddTask"
+            component={AddTaskScreen}
+            options={{ animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen name="TaskDetail" component={TaskDetailScreen} />
+          <Stack.Screen name="ReminderSettings" component={ReminderSettingsScreen} />
+          <Stack.Screen name="EditReminderPreset" component={EditReminderPresetScreen} />
+        </>
+      )}
+    </Stack.Navigator>
+  );
+};
 
 const tabStyles = StyleSheet.create({
   tabBar: {

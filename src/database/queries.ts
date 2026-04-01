@@ -30,6 +30,26 @@ export const insertReminder = (reminder: Reminder) => {
   );
 };
 
+export const upsertReminder = (reminder: Reminder) => {
+  const db = getDB();
+  const existing = db.getFirstSync('SELECT id FROM reminders WHERE id = ?', [reminder.id]);
+  
+  if (existing) {
+    db.runSync(
+      `UPDATE reminders SET type=?, title=?, description=?, priority=?, dueDate=?, endTime=?, completed=?, reminderTime=?, reminderRepeat=?, updatedAt=?
+       WHERE id=?`,
+      [
+        reminder.type, reminder.title, reminder.description, reminder.priority,
+        reminder.dueDate, reminder.endTime || null, reminder.completed,
+        reminder.reminderTime || null, reminder.reminderRepeat || null,
+        new Date().toISOString(), reminder.id
+      ]
+    );
+  } else {
+    insertReminder(reminder);
+  }
+};
+
 // Update a reminder
 export const updateReminder = (id: string, fields: Partial<Reminder>) => {
   const db = getDB();

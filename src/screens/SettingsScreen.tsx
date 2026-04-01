@@ -6,6 +6,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import { useAuthStore } from '../store/useAuthStore';
+import { syncGoogleCalendar } from '../services/calendarSyncService';
 
 interface SettingItemProps {
   icon: keyof typeof MaterialIcons.glyphMap;
@@ -31,13 +33,29 @@ const SettingItem: React.FC<SettingItemProps> = ({ icon, title, subtitle, onPres
 
 export const SettingsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { user, signOut } = useAuthStore();
 
   const handleLogout = () => {
     Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
       { text: 'Hủy', style: 'cancel' },
-      { text: 'Đăng xuất', style: 'destructive', onPress: () => console.log('Logged out') }
+      { text: 'Đăng xuất', style: 'destructive', onPress: async () => await signOut() }
     ]);
   };
+
+  const handleSync = async () => {
+    Alert.alert('Đồng bộ', 'Đang kết nối tới Google Calendar...');
+    const result = await syncGoogleCalendar();
+    
+    if (result.success) {
+      Alert.alert('Thành công', `Đã đồng bộ ${result.count} sự kiện từ Google Calendar.`);
+    } else {
+      Alert.alert('Lỗi đồng bộ', result.error || 'Không thể đồng bộ dữ liệu lúc này.');
+    }
+  };
+
+  const userDisplayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Người dùng';
+  const userEmail = user?.email || 'Chưa cập nhật email';
+  const userInitial = userDisplayName.charAt(0).toUpperCase();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -50,11 +68,11 @@ export const SettingsScreen = () => {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>M</Text>
+            <Text style={styles.avatarText}>{userInitial}</Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Trịnh Công Minh</Text>
-            <Text style={styles.profileEmail}>congminhxx@gmail.com</Text>
+            <Text style={styles.profileName}>{userDisplayName}</Text>
+            <Text style={styles.profileEmail}>{userEmail}</Text>
           </View>
           <TouchableOpacity style={styles.editBtn}>
             <Text style={styles.editBtnText}>Sửa</Text>
@@ -75,8 +93,8 @@ export const SettingsScreen = () => {
             <SettingItem 
               icon="sync" 
               title="Đồng bộ lịch" 
-              subtitle="Google Calendar, Outlook"
-              onPress={() => {}} 
+              subtitle="Google Calendar"
+              onPress={handleSync} 
               color="#0f9d58" 
             />
           </View>

@@ -50,6 +50,10 @@ const slides: SlideData[] = [
   },
 ];
 
+import { useAuthStore } from '../store/useAuthStore';
+
+// ... (slides remains unchanged)
+
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Onboarding'>;
 };
@@ -58,17 +62,18 @@ export const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
+  const { setFirstTime } = useAuthStore();
 
   const handleNext = () => {
     if (currentIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
       setCurrentIndex(prev => prev + 1);
     } else {
-      navigation.replace('Main');
+      setFirstTime(false);
     }
   };
 
-  const handleSkip = () => navigation.replace('Main');
+  const handleSkip = () => setFirstTime(false);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
