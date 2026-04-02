@@ -45,7 +45,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
-            {/* Header */}
             <View style={styles.header}>
               <View>
                 <Text style={styles.greeting}>Xin chào! 👋</Text>
@@ -55,7 +54,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
               </View>
             </View>
 
-            {/* Stats card */}
             <LinearGradient
               colors={[Colors.primary, Colors.primaryContainer]}
               start={{ x: 0, y: 0 }}

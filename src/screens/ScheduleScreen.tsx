@@ -341,7 +341,6 @@ export const ScheduleScreen = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <MaterialIcons name="calendar-today" size={24} color={Colors.primary} style={{ marginRight: 8 }} />
@@ -353,7 +352,6 @@ export const ScheduleScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Conditional Rendering Main Area */}
       {viewMode === 'month' ? (
         <View style={{ flex: 1 }}>
           <View style={styles.calendarWrapper}>
@@ -413,10 +411,8 @@ export const ScheduleScreen = () => {
         </View>
       )}
 
-      {/* FAB Component */}
       <MultiActionFAB />
 
-      {/* Filter Modal */}
       <Modal visible={filterVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setFilterVisible(false)}>
           <View style={styles.filterModalContent}>
@@ -439,7 +435,6 @@ export const ScheduleScreen = () => {
         </TouchableOpacity>
       </Modal>
 
-      {/* Detail Popup */}
       <ItemDetailPopup 
         item={selectedItem}
         visible={!!selectedItem}

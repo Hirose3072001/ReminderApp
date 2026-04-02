@@ -11,6 +11,8 @@ import { NotificationScreen } from '../screens/NotificationScreen';
 import { AddTaskScreen } from '../screens/AddTaskScreen';
 import { TaskDetailScreen } from '../screens/TaskDetailScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { ProfileScreen } from '../screens/ProfileScreen';
+import { CalendarSyncScreen } from '../screens/CalendarSyncScreen';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ReminderSettingsScreen } from '../screens/ReminderSettingsScreen';
@@ -18,6 +20,7 @@ import { EditReminderPresetScreen } from '../screens/EditReminderPresetScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { useAuthStore } from '../store/useAuthStore';
 import { supabase } from '../services/supabase';
+import { requestNotificationPermission } from '../services/notificationService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -121,6 +124,13 @@ export const AppNavigator = () => {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    // Tự động xin quyền thông báo khi người dùng mới tải app lần đầu
+    if (isFirstTime) {
+      requestNotificationPermission();
+    }
+  }, [isFirstTime]);
+
   return (
     <Stack.Navigator
       screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
@@ -140,6 +150,8 @@ export const AppNavigator = () => {
           <Stack.Screen name="TaskDetail" component={TaskDetailScreen} />
           <Stack.Screen name="ReminderSettings" component={ReminderSettingsScreen} />
           <Stack.Screen name="EditReminderPreset" component={EditReminderPresetScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="CalendarSync" component={CalendarSyncScreen} />
         </>
       )}
     </Stack.Navigator>

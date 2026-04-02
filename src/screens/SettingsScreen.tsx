@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontFamily, FontSize } from '../theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -8,6 +8,13 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAuthStore } from '../store/useAuthStore';
 import { syncGoogleCalendar } from '../services/calendarSyncService';
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
+import * as Linking from 'expo-linking';
+import { supabase } from '../services/supabase';
+import { syncService } from '../services/syncService';
+
+WebBrowser.maybeCompleteAuthSession();
 
 interface SettingItemProps {
   icon: keyof typeof MaterialIcons.glyphMap;
@@ -31,15 +38,126 @@ const SettingItem: React.FC<SettingItemProps> = ({ icon, title, subtitle, onPres
   </TouchableOpacity>
 );
 
+interface SettingSwitchItemProps {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  title: string;
+  subtitle?: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  color?: string;
+}
+
+const SettingSwitchItem: React.FC<SettingSwitchItemProps> = ({ icon, title, subtitle, value, onValueChange, color = Colors.outlineVariant }) => (
+  <View style={styles.settingItem}>
+    <View style={styles.iconContainer}>
+      <MaterialIcons name={icon} size={24} color={color} />
+    </View>
+    <View style={styles.textContainer}>
+      <Text style={styles.title}>{title}</Text>
+      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+    </View>
+    <Switch 
+      value={value} 
+      onValueChange={onValueChange}
+      trackColor={{ false: '#e2e2e2', true: Colors.primary }}
+      thumbColor="#fff"
+      ios_backgroundColor="#e2e2e2"
+    />
+  </View>
+);
+
 export const SettingsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { user, signOut } = useAuthStore();
+  const { user, profile, signOut, setSession, updateProfile } = useAuthStore();
+  const [switching, setSwitching] = useState(false);
+  
+  // Trạng thái local để Switch phản hồi tức thì
+  const [pushEnabled, setPushEnabled] = useState(profile?.push_notifications ?? true);
+
+  // Đồng bộ local state khi profile thay đổi (ví dụ: từ thiết bị khác hoặc khi fetch xong)
+  React.useEffect(() => {
+    if (profile?.push_notifications !== undefined) {
+      setPushEnabled(profile.push_notifications);
+    }
+  }, [profile?.push_notifications]);
+
+  const handleTogglePush = async (value: boolean) => {
+    // 1. Cập nhật UI ngay lập tức (Optimistic Update)
+    setPushEnabled(value);
+    
+    // 2. Gọi API ngầm định
+    const result = await updateProfile({ push_notifications: value });
+    
+    // 3. Nếu lỗi thì hoàn tác và thông báo
+    if (!result.success) {
+      setPushEnabled(!value);
+      Alert.alert('Lỗi', 'Không thể cập nhật thiết lập thông báo vào lúc này.');
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
       { text: 'Hủy', style: 'cancel' },
       { text: 'Đăng xuất', style: 'destructive', onPress: async () => await signOut() }
     ]);
+  };
+
+  const handleSwitchAccount = async () => {
+    setSwitching(true);
+    try {
+      const redirectUrl = AuthSession.makeRedirectUri({
+        path: 'auth/callback',
+      });
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'select_account',
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        
+        if (result.type === 'success' && result.url) {
+          const url = result.url;
+          const urlParts = url.split(/[?#]/);
+          const allParams = urlParts.slice(1).join('&');
+          const params = new URLSearchParams(allParams);
+          
+          const code = params.get('code');
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+
+          if (code) {
+            const { data: switchData, error: switchError } = await supabase.auth.exchangeCodeForSession(code);
+            if (switchError) throw switchError;
+            setSession(switchData.session);
+            syncService.performFullSync();
+          } else if (accessToken && refreshToken) {
+            const { data: switchData, error: switchError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (switchError) throw switchError;
+            setSession(switchData.session);
+            syncService.performFullSync();
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Switch Account Error:', error);
+      Alert.alert('Lỗi chuyển tài khoản', error.message);
+    } finally {
+      setSwitching(false);
+    }
   };
 
   const handleSync = async () => {
@@ -53,9 +171,10 @@ export const SettingsScreen = () => {
     }
   };
 
-  const userDisplayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Người dùng';
+  const userDisplayName = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Người dùng';
   const userEmail = user?.email || 'Chưa cập nhật email';
   const userInitial = userDisplayName.charAt(0).toUpperCase();
+  const avatarUrl = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -68,14 +187,22 @@ export const SettingsScreen = () => {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{userInitial}</Text>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} resizeMode="cover" />
+            ) : (
+              <Text style={styles.avatarText}>{userInitial}</Text>
+            )}
           </View>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{userDisplayName}</Text>
             <Text style={styles.profileEmail}>{userEmail}</Text>
           </View>
-          <TouchableOpacity style={styles.editBtn}>
-            <Text style={styles.editBtnText}>Sửa</Text>
+          <TouchableOpacity style={styles.editBtn} onPress={handleSwitchAccount} disabled={switching}>
+            {switching ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <MaterialIcons name="swap-horiz" size={24} color={Colors.onSurface} title="Đổi tài khoản" />
+            )}
           </TouchableOpacity>
         </View>
 
@@ -86,15 +213,15 @@ export const SettingsScreen = () => {
               icon="person" 
               title="Quản lý hồ sơ cá nhân" 
               subtitle="Cập nhật tên, mật khẩu"
-              onPress={() => {}} 
+              onPress={() => navigation.navigate('Profile')} 
               color={Colors.primary} 
             />
             <View style={styles.divider} />
             <SettingItem 
               icon="sync" 
               title="Đồng bộ lịch" 
-              subtitle="Google Calendar"
-              onPress={handleSync} 
+              subtitle="Google, iCloud, Outlook"
+              onPress={() => navigation.navigate('CalendarSync')} 
               color="#0f9d58" 
             />
           </View>
@@ -117,6 +244,15 @@ export const SettingsScreen = () => {
                subtitle="Cài đặt các mốc thời gian rảnh"
                onPress={() => navigation.navigate('ReminderSettings')} 
                color={Colors.primary} 
+             />
+             <View style={styles.divider} />
+             <SettingSwitchItem 
+               icon="notifications-active" 
+               title="Thông báo đẩy" 
+               subtitle="Nhận thông báo trên thiết bị di động"
+               value={pushEnabled}
+               onValueChange={handleTogglePush}
+               color={Colors.secondary}
              />
            </View>
         </View>
@@ -170,10 +306,16 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: Colors.primaryContainer || '#d8e2ff',
+    backgroundColor: Colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
   },
   avatarText: {
     fontFamily: FontFamily.manropeBold,
@@ -196,9 +338,11 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     backgroundColor: '#f3f3f4',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   editBtnText: {
     fontFamily: FontFamily.interBold,

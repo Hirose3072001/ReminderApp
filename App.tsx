@@ -22,6 +22,10 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { Colors } from './src/theme';
 import * as Notifications from 'expo-notifications';
 import { initDB } from './src/database';
+import { useAuthStore } from './src/store/useAuthStore';
+import { syncService } from './src/services/syncService';
+import { useReminderStore } from './src/store/useReminderStore';
+import NetInfo from '@react-native-community/netinfo';
 
 // Handle notification taps when app is running
 Notifications.setNotificationHandler({
@@ -55,6 +59,30 @@ export default function App() {
       Inter_700Bold,
     }).then(() => setFontsLoaded(true));
   }, []);
+
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const loadReminders = useReminderStore(state => state.loadReminders);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      // 1. Sync ngay khi vừa login hoặc mở app
+      syncService.performFullSync().then(() => {
+        loadReminders();
+      });
+
+      // 2. Lắng nghe trạng thái mạng để sync khi online trở lại
+      const unsubscribe = NetInfo.addEventListener(state => {
+        if (state.isConnected && state.isInternetReachable) {
+          console.log('🌐 Internet Reconnected! Triggering Auto-Sync...');
+          syncService.performFullSync().then(() => {
+            loadReminders();
+          });
+        }
+      });
+
+      return () => unsubscribe();
+    }
+  }, [isAuthenticated]);
 
   if (!fontsLoaded) {
     return (

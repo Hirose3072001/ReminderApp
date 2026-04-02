@@ -18,6 +18,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import * as Linking from 'expo-linking';
 import { useAuthStore } from '../store/useAuthStore';
+import { syncService } from '../services/syncService';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -83,6 +84,8 @@ export const LoginScreen = () => {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) throw error;
         setSession(data.session);
+        // Sync ngay sau khi đăng nhập thành công
+        syncService.performFullSync();
       } else if (accessToken && refreshToken) {
         const { data, error } = await supabase.auth.setSession({
           access_token: accessToken,
@@ -90,6 +93,8 @@ export const LoginScreen = () => {
         });
         if (error) throw error;
         setSession(data.session);
+        // Sync ngay sau khi đăng nhập thành công
+        syncService.performFullSync();
       }
     } catch (err: any) {
       console.error('Redirect Processing Error:', err);

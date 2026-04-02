@@ -8,6 +8,8 @@ export type RootStackParamList = {
   TaskDetail: { id: string };
   ReminderSettings: undefined;
   EditReminderPreset: { presetId?: string };
+  Profile: undefined;
+  CalendarSync: undefined;
 };
 
 export type MainTabParamList = {
