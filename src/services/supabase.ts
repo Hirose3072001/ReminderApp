@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 // Nạp bản vá cho Buffer và URL (bắt buộc cho React Native + Supabase)
 global.Buffer = require('buffer').Buffer;
@@ -16,7 +17,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: Platform.OS === 'web',
     flowType: 'pkce',
   },
   // Fix lỗi 'stream' bằng cách dùng WebSocket toàn cục của React Native

@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { cancelTaskNotifications } from '../services/notificationService';
 import { useAuthStore } from './useAuthStore';
 import { syncService } from '../services/syncService';
+import { handleScheduling } from '../services/schedulingService';
 
 interface ReminderState {
   reminders: Reminder[];
@@ -16,11 +17,12 @@ interface ReminderState {
   removeReminder: (id: string) => void;
   editReminder: (id: string, reminderData: Partial<Reminder>) => void;
   syncData: () => Promise<void>;
+  resetStore: () => void;
 }
 
 export const useReminderStore = create<ReminderState>((set, get) => ({
   reminders: [],
-  
+
   loadReminders: () => {
     const user = useAuthStore.getState().user;
     if (!user) {
@@ -31,7 +33,7 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
     set({ reminders: data });
   },
 
-  addReminder: (reminderData: Partial<Reminder> & { title: string; type: 'task' | 'event'; dueDate: string }) => {
+  addReminder: async (reminderData) => {
     const user = useAuthStore.getState().user;
     if (!user) return;
 
@@ -41,6 +43,7 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
       reminderTime: null,
       reminderRepeat: null,
       notificationId: null,
+      reminderRules: null,
       ...reminderData,
       id: reminderData.id || uuidv4(),
       user_id: user.id,
@@ -50,42 +53,64 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    Queries.insertReminder(newReminder);
-    get().loadReminders();
-    
-    syncService.pushLocalChanges();
+
+    try {
+      Queries.insertReminder(newReminder);
+      await handleScheduling(newReminder);
+      get().loadReminders();
+      syncService.markDirty(); // Đánh dấu dirty, sẽ tự push sau 5 phút
+    } catch (e) {
+      console.error('❌ Error adding reminder:', e);
+    }
   },
 
   toggleStatus: (id, currentStatus) => {
     const newStatus = currentStatus === 0 ? 1 : 0;
     Queries.updateReminderStatus(id, newStatus);
+    if (newStatus === 1) {
+      cancelTaskNotifications(id);
+    }
     get().loadReminders();
-    syncService.pushLocalChanges();
+    syncService.markDirty();
   },
 
   updateDescription: (id, description) => {
     Queries.updateReminderDescription(id, description);
     get().loadReminders();
-    syncService.pushLocalChanges();
+    syncService.markDirty();
   },
 
   removeReminder: (id) => {
     Queries.deleteReminder(id);
     cancelTaskNotifications(id);
     get().loadReminders();
-    syncService.pushLocalChanges();
+    syncService.markDirty();
   },
-  
-  editReminder: (id, data) => {
-    Queries.updateReminder(id, data);
-    get().loadReminders();
-    syncService.pushLocalChanges();
+
+  editReminder: async (id, data) => {
+    try {
+      Queries.updateReminder(id, data);
+
+      const user = useAuthStore.getState().user;
+      if (user) {
+        const all = Queries.getAllReminders(user.id);
+        const updated = all.find(r => r.id === id);
+        if (updated) {
+          await handleScheduling(updated);
+        }
+      }
+
+      get().loadReminders();
+      syncService.markDirty();
+    } catch (e) {
+      console.error('❌ Error editing reminder:', e);
+    }
   },
 
   syncData: async () => {
     const user = useAuthStore.getState().user;
     if (!user) return;
-    
+
     await syncService.performFullSync(user.id);
     get().loadReminders();
   }
@@ -95,10 +120,15 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
 useAuthStore.subscribe((state) => {
   if (state.isAuthenticated && state.user) {
     useReminderStore.getState().loadReminders();
-    // Đồng bộ ngay khi login
-    syncService.performFullSync(state.user.id).catch(console.error);
+    syncService.performFullSync(state.user.id, true).catch(console.error); // Luôn kéo data mới khi login (ignore throttle)
   } else {
-    // Xóa sạch store khi logout
     useReminderStore.setState({ reminders: [] });
   }
 });
+
+// Lắng nghe sự kiện sync thành công để cập nhật lại UI
+setTimeout(() => {
+  syncService.addListener(() => {
+    useReminderStore.getState().loadReminders();
+  });
+}, 0);

@@ -40,9 +40,11 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
   const isEdit = !!editItem;
 
   const getInitialValues = () => {
+    const now = new Date();
+    now.setSeconds(0, 0);
     const defaults = {
-      title: '', description: '', startTime: new Date(),
-      endTime: new Date(Date.now() + 3600000), priority: 'Trung bình',
+      title: '', description: '', startTime: now,
+      endTime: new Date(now.getTime() + 3600000), priority: 'Trung bình',
       subtasks: [] as string[], participants: [] as string[],
       formatType: 'Trực tiếp' as 'Trực tiếp' | 'Trực tuyến', location: '', link: '',
     };
@@ -163,7 +165,9 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       const d = isStart ? startTime : endTime;
       const setD = isStart ? setStartTime : setEndTime;
       if (pickerMode === 'datetime') {
-         setD(selectedDate);
+         const cleanDate = new Date(selectedDate);
+         cleanDate.setSeconds(0, 0);
+         setD(cleanDate);
       } else if (pickerMode === 'date') {
         const newD = new Date(d);
         newD.setFullYear(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
@@ -238,25 +242,25 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       triggerTimes = futureTriggers;
 
       if (isEdit && editItem) {
-        editReminder(taskId, {
+        await editReminder(taskId, {
           type: isEvent ? 'event' : 'task',
           title: title.trim(),
           description: finalDescription,
           priority: pVal,
-          dueDate: format(startTime, "yyyy-MM-dd'T'HH:mm:ss"),
-          endTime: format(endTime, "yyyy-MM-dd'T'HH:mm:ss"),
+          dueDate: startTime.toISOString(),
+          endTime: endTime.toISOString(),
           reminderTime: reminderTimeStr,
           reminderRules: hasReminder ? JSON.stringify(localReminderRules) : null,
         });
       } else {
-        addReminder({
+        await addReminder({
           id: taskId,
           type: isEvent ? 'event' : 'task',
           title: title.trim(),
           description: finalDescription,
           priority: pVal,
-          dueDate: format(startTime, "yyyy-MM-dd'T'HH:mm:ss"),
-          endTime: format(endTime, "yyyy-MM-dd'T'HH:mm:ss"),
+          dueDate: startTime.toISOString(),
+          endTime: endTime.toISOString(),
           reminderTime: reminderTimeStr,
           reminderRepeat: 'none',
           reminderRules: hasReminder ? JSON.stringify(localReminderRules) : null,
@@ -264,18 +268,6 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
         });
       }
 
-      await cancelTaskNotifications(taskId);
-      if (hasReminder && triggerTimes.length > 0) {
-        for (const t of triggerTimes) {
-           await scheduleNotification(
-             taskId,
-             `🔔 ${title.trim()}`,
-             t.body || (isEvent ? 'Sắp diễn ra sự kiện' : (isEdit ? 'Cập nhật công việc' : 'Đến giờ làm bài')),
-             t.date,
-             'none'
-           );
-        }
-      }
       navigation.goBack();
     } catch (e) {
       Alert.alert('Lỗi', 'Không thể lưu. Thử lại sau.');

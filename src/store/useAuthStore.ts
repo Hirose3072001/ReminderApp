@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
+import * as Queries from '../database/queries';
+// require('../services/syncService') đã được chuyển sang cơ chế subscriber trong syncService.ts để tránh circular dependency.
 
 export interface Profile {
   id: string;
@@ -87,8 +89,26 @@ export const useAuthStore = create<AuthState>()(
         }
       },
       signOut: async () => {
-        await supabase.auth.signOut();
-        set({ session: null, user: null, profile: null, isAuthenticated: false });
+        try {
+          const service = require('../services/syncService').syncService;
+          
+          // 1. Phải đẩy nốt các thay đổi local chưa đồng bộ lên Cloud trước khi xóa!
+          console.log('📤 Final sync before sign out...');
+          await service.pushLocalChanges();
+          
+          // 2. Xóa metadata đồng bộ
+          await service.clearSyncMetadata();
+
+          // 3. Xóa dữ liệu local (SQLite)
+          Queries.clearAllLocalData();
+          
+          // 4. Đăng xuất khỏi Supabase
+          await supabase.auth.signOut();
+        } catch (err) {
+          console.error('Error during signOut cleanup:', err);
+        } finally {
+          set({ session: null, user: null, profile: null, isAuthenticated: false });
+        }
       },
       updateProfile: async (profileData) => {
         const user = get().user;

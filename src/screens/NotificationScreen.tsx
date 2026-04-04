@@ -1,20 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TouchableWithoutFeedback, SectionList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, SectionList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontFamily, FontSize } from '../theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useReminderStore } from '../store/useReminderStore';
-import { format, formatDistanceToNow, isAfter, isBefore, addHours, parseISO, isToday, isYesterday, startOfDay } from 'date-fns';
+import { useNotificationStore } from '../store/useNotificationStore';
+import { format, parseISO, isToday, isYesterday } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { ItemDetailPopup } from '../components/schedule/ItemDetailPopup';
-import { Reminder } from '../database/queries';
+import { Reminder, Notification } from '../database/queries';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { generateTriggersFromRules } from '../utils/reminderUtils';
+import * as Notifications from 'expo-notifications';
 
 export const NotificationScreen = () => {
-  const { reminders, loadReminders } = useReminderStore();
+  const { reminders } = useReminderStore();
+  const { notifications: storeNotifications, loadNotifications, markAsRead, syncData } = useNotificationStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   
   const [now, setNow] = useState(new Date());
@@ -23,154 +25,66 @@ export const NotificationScreen = () => {
   const [activeFilter, setActiveFilter] = useState('Tất cả');
   const [showFilter, setShowFilter] = useState(false);
 
-  const FILTERS = ['Tất cả', 'Nhắc lịch', 'Đã hoàn thành', 'Đã quá hạn', 'Mốc thời gian'];
+  const FILTERS = ['Tất cả', 'Nhắc lịch', 'Đã hoàn thành', 'Đã quá hạn'];
 
   useEffect(() => {
-    loadReminders();
-    // Refresh every minute to update the feed as time passes
-    const timer = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, [loadReminders]);
+    loadNotifications();
+    syncData();
+
+    // Cập nhật mỗi giây để đảm bảo độ chính xác tuyệt đối
+    const timer = setInterval(() => {
+      const current = new Date();
+      setNow(current);
+      
+      // Chỉ load dữ liệu từ DB mỗi 5 giây hoặc khi bắt đầu phút mới để tiết kiệm hiệu năng
+      if (current.getSeconds() % 5 === 0) {
+        loadNotifications();
+      }
+    }, 1000);
+
+    // Lắng nghe ngay khi thông báo hệ thống nổ — cập nhật UI tức thì
+    const sub = Notifications.addNotificationReceivedListener(() => {
+      setNow(new Date());
+      loadNotifications();
+    });
+
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, []);
 
   const notifications = useMemo(() => {
-    const list: any[] = [];
-    const threshold = addHours(now, 24);
-    const recentThreshold = addHours(now, -24);
-
     const formatRelativeTime = (date: Date) => {
       const diffMs = now.getTime() - date.getTime();
       const diffSec = Math.floor(diffMs / 1000);
-      
-      // If within 60 seconds (past or future), show "bây giờ"
-      if (Math.abs(diffSec) < 60) return 'bây giờ';
-      
-      return formatDistanceToNow(date, { addSuffix: true, locale: vi });
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffHour = Math.floor(diffMs / 3600000);
+      const diffDay = Math.floor(diffMs / 86400000);
+
+      if (diffSec < 60) return 'bây giờ';
+      if (diffMin < 60) return `${diffMin} phút trước`;
+      if (diffHour < 24) return `${diffHour} giờ trước`;
+      if (diffDay < 7) return `${diffDay} ngày trước`;
+      return format(date, 'dd/MM/yyyy');
     };
 
-    reminders.forEach((r: Reminder) => {
-      const updatedAt = parseISO(r.updatedAt);
-      const dueDate = parseISO(r.dueDate);
-      const endTime = r.endTime ? parseISO(r.endTime) : dueDate;
-
-      // 1. Đã hoàn thành (Completed)
-      if (r.completed === 1 && isAfter(updatedAt, recentThreshold)) {
-        list.push({
-          id: `completed-${r.id}`,
-          reminder: r,
-          title: 'Đã hoàn thành',
-          desc: `Chúc mừng bạn đã hoàn thành trọn vẹn "${r.title}"`,
-          time: formatRelativeTime(updatedAt),
-          rawTime: updatedAt,
-          type: 'success',
-          icon: 'check-circle'
-        });
-      }
-
-      // 2. Đã quá hạn (Overdue) - Only for tasks
-      if (r.type === 'task' && r.completed === 0 && isBefore(endTime, now) && isAfter(endTime, recentThreshold)) {
-        list.push({
-          id: `overdue-${r.id}`,
-          reminder: r,
-          title: 'Đã quá hạn',
-          desc: `Công việc "${r.title}" đã quá hạn chót`,
-          time: formatRelativeTime(endTime),
-          rawTime: endTime,
-          type: 'error',
-          icon: 'error'
-        });
-      }
-
-      // 3. Mốc thời gian (Deadline passed)
-      if (r.completed === 0 && isAfter(endTime, recentThreshold) && isBefore(endTime, now)) {
-        list.push({
-          id: `deadline-${r.id}`,
-          reminder: r,
-          title: 'Mốc thời gian',
-          desc: `Đã đến hạn chót của ${r.type === 'event' ? 'sự kiện' : 'công việc'} "${r.title}"`,
-          time: formatRelativeTime(endTime),
-          rawTime: endTime,
-          type: 'info',
-          icon: 'event-busy'
-        });
-      }
-
-      // 4. Bắt đầu (Start time)
-      if (r.completed === 0 && isAfter(dueDate, recentThreshold) && isBefore(dueDate, threshold)) {
-        const isPast = isBefore(dueDate, now);
-        list.push({
-          id: `start-${r.id}`,
-          reminder: r,
-          title: 'Nhắc lịch',
-          desc: isPast 
-            ? `${r.type === 'event' ? 'Sự kiện' : 'Công việc'} "${r.title}" đã bắt đầu`
-            : `${r.type === 'event' ? 'Sự kiện' : 'Công việc'} "${r.title}" sắp bắt đầu`,
-          time: formatRelativeTime(dueDate),
-          rawTime: dueDate,
-          type: 'info',
-          icon: isPast ? 'play-circle-outline' : 'schedule'
-        });
-      }
-
-      // 5. Nhắc lịch (Reminder Rules - Recurring)
-      const ruleTriggers = generateTriggersFromRules(r.reminderRules as string | null, dueDate, endTime, r.title, r.type as any);
-      
-      // If no rules, fall back to reminderTime (legacy or simple)
-      if (ruleTriggers.length === 0 && r.reminderTime) {
-        ruleTriggers.push({
-          date: parseISO(r.reminderTime),
-          body: r.type === 'event' ? `Sự kiện "${r.title}"` : `Công việc "${r.title}" chưa hoàn thành`,
-          title: 'Nhắc lịch'
-        });
-      }
-
-      ruleTriggers.forEach((trigger, idx) => {
-        const triggerTime = trigger.date;
-        // For "Nhắc lịch", only show if it has "fired" (up to 1 min before is OK)
-        if (r.completed === 0 && isBefore(triggerTime, addHours(now, 0.02)) && isAfter(triggerTime, recentThreshold)) {
-          list.push({
-            id: `reminder-${r.id}-${idx}`,
-            reminder: r,
-            title: 'Nhắc lịch',
-            desc: trigger.body,
-            time: formatRelativeTime(triggerTime),
-            rawTime: triggerTime,
-            priority: 10,
-            type: 'info',
-            icon: 'notifications-active'
-          });
-        }
-      });
-    });
-
-    // Sort by most recent, then by priority
-    const sorted = list.sort((a, b) => {
-      const timeDiff = b.rawTime.getTime() - a.rawTime.getTime();
-      if (timeDiff !== 0) return timeDiff;
-      return (b.priority || 0) - (a.priority || 0);
-    });
-
-    // Filter logic
-    let listToGroup = [];
-    if (activeFilter === 'Tất cả') {
-      listToGroup = sorted;
-    } else {
-      listToGroup = sorted.filter(item => {
-        if (activeFilter === 'Nhắc lịch') {
-          return item.title === 'Nhắc lịch' || 
-                 item.title === 'Sắp bắt đầu' || 
-                 item.title === 'Đã bắt đầu' || 
-                 item.title === 'Sắp diễn ra' || 
-                 item.title === 'Đang diễn ra';
-        }
-        return item.title === activeFilter;
+    // 1. Phân loại theo filter
+    let filtered = storeNotifications;
+    if (activeFilter !== 'Tất cả') {
+      filtered = filtered.filter(n => {
+        if (activeFilter === 'Nhắc lịch') return n.title === 'Nhắc lịch';
+        if (activeFilter === 'Đã hoàn thành') return n.title === 'Đã hoàn thành';
+        if (activeFilter === 'Đã quá hạn') return n.title === 'Đã quá hạn';
+        return true;
       });
     }
 
-    // Group into sections
+    // 2. Nhóm theo Ngày (Date Grouping)
     const groups: { [key: string]: any[] } = {};
-    listToGroup.forEach(item => {
+    filtered.forEach(notif => {
+      const d = parseISO(notif.timestamp);
       let dateLabel = '';
-      const d = item.rawTime;
       if (isToday(d)) dateLabel = 'Hôm nay';
       else if (isYesterday(d)) dateLabel = 'Hôm qua';
       else {
@@ -178,15 +92,26 @@ export const NotificationScreen = () => {
         dateLabel = dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
       }
 
+      const reminder = reminders.find(r => r.id === notif.reminder_id);
+
       if (!groups[dateLabel]) groups[dateLabel] = [];
-      groups[dateLabel].push(item);
+      groups[dateLabel].push({
+        ...notif,
+        displayTime: formatRelativeTime(d),
+        rawTime: d,
+        reminder
+      });
     });
 
-    return Object.keys(groups).map(title => ({
+    // 3. Chuyển sang định dạng SectionList và sắp xếp theo thời gian
+    const sections = Object.keys(groups).map(title => ({
       title,
-      data: groups[title]
+      data: groups[title].sort((a, b) => b.rawTime.getTime() - a.rawTime.getTime()),
+      sortDate: groups[title][0].rawTime
     }));
-  }, [reminders, now, activeFilter]);
+
+    return sections.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
+  }, [storeNotifications, reminders, now, activeFilter]);
 
   const renderDescription = (text: string) => {
     if (!text) return null;
@@ -206,20 +131,41 @@ export const NotificationScreen = () => {
     );
   };
 
+  const handleEdit = (reminder: Reminder) => {
+    setPopupVisible(false);
+    navigation.navigate('AddTask', {
+      type: reminder.type as any,
+      editItem: reminder
+    });
+  };
+
   const renderItem = ({ item }: { item: any }) => {
     let iconColor: string = Colors.primary;
+    let iconName: any = item.is_read === 0 ? 'notifications-active' : 'notifications-none';
     
-    if (item.type === 'success') iconColor = '#2E7D32'; 
-    else if (item.type === 'error' || item.title === 'Mốc thời gian' || item.id.startsWith('deadline')) iconColor = '#C62828'; 
-    else if (item.desc.includes('đã bắt đầu') || item.title === 'Đã bắt đầu') iconColor = '#2E7D32'; 
-    else if (item.desc.includes('đang diễn ra') || item.title === 'Đang diễn ra') iconColor = '#F9A825'; 
-    else if (item.type === 'warning') iconColor = '#F9A825';
-    else if (item.type === 'info') iconColor = Colors.primary;
+    const bodyLower = (item.body || '').toLowerCase();
+    
+    // Logic màu sắc theo yêu cầu mới nhất:
+    // 1. "đã bắt đầu" -> Xanh lá
+    // 2. "đã kết thúc" -> Đỏ 
+    // 3. "Đã hoàn thành" -> Xanh lá
+    // 4. "Đã quá hạn" -> Đỏ
+    // 5. Còn lại (Sắp bắt đầu, Sắp kết thúc, v.v.) -> Xanh biển
+    
+    const isStarted = bodyLower.includes('đã bắt đầu');
+    const isEnded = bodyLower.includes('đã kết thúc');
 
+    if (isStarted) iconColor = '#2E7D32'; // Green
+    else if (isEnded) iconColor = '#C62828'; // Red
+    else if (item.title === 'Đã quá hạn') iconColor = '#C62828'; // Red
+    else if (item.title === 'Đã hoàn thành') iconColor = '#2E7D32'; // Green
+    else iconColor = Colors.primary; // Blue (Mặc định cho các thông báo "Sắp...")
+    
     return (
       <TouchableOpacity 
-        style={styles.notifCard}
+        style={[styles.notifCard, item.is_read === 0 && styles.unreadCard]}
         onPress={() => {
+          if (item.is_read === 0) markAsRead(item.id);
           if (item.reminder) {
             setSelectedItem(item.reminder);
             setPopupVisible(true);
@@ -228,14 +174,14 @@ export const NotificationScreen = () => {
         activeOpacity={0.7}
       >
         <View style={[styles.iconWrapper, { backgroundColor: iconColor + '15' }]}>
-          <MaterialIcons name={item.icon as any} size={24} color={iconColor} />
+          <MaterialIcons name={iconName} size={24} color={iconColor} />
         </View>
         <View style={styles.info}>
           <View style={styles.titleRow}>
             <Text style={[styles.title, { color: iconColor }]}>{item.title}</Text>
-            <Text style={styles.time}>{item.time}</Text>
+            <Text style={styles.time}>{item.displayTime}</Text>
           </View>
-          {renderDescription(item.desc)}
+          {renderDescription(item.body)}
         </View>
       </TouchableOpacity>
     );
@@ -315,6 +261,7 @@ export const NotificationScreen = () => {
         visible={popupVisible}
         onClose={() => setPopupVisible(false)}
         item={selectedItem}
+        onEdit={handleEdit}
       />
     </SafeAreaView>
   );
@@ -349,6 +296,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
+  },
+  unreadCard: {
+    backgroundColor: Colors.primary + '12', // Màu nền xanh đậm hơn cho thông báo chưa đọc
+    borderColor: Colors.primary + '40',
   },
   iconWrapper: {
     width: 48,

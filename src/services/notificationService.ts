@@ -3,6 +3,10 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import { RepeatType } from '../store/taskStore';
 
+// Lazy getter để tránh circular dependency:
+// notificationService → useNotificationStore → syncService → notificationService
+const getNotificationStore = () => require('../store/useNotificationStore').useNotificationStore;
+
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -15,10 +19,12 @@ Notifications.setNotificationHandler({
 });
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
+  /* 
   if (!Device.isDevice) {
     console.warn('Notifications only work on physical devices');
     return false;
   }
+  */
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
@@ -127,4 +133,23 @@ export const cancelTaskNotifications = async (taskId: string): Promise<void> => 
   } catch (e) {
     console.error('Failed to cancel task notifications:', e);
   }
+};
+
+// Listener for received notifications
+export const initNotificationListeners = () => {
+  const subscription = Notifications.addNotificationReceivedListener(notification => {
+    const { title, body, data } = notification.request.content;
+    console.log('🔔 Notification received in foreground:', title);
+    
+    // Lưu vào store để đồng bộ lên Supabase
+    getNotificationStore().getState().addNotification({
+      title: title || 'Nhắc lịch',
+      body: body || '',
+      reminder_id: (data?.taskId as string) || (data?.reminderId as string) || null,
+      type: 'reminder',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  return subscription;
 };
