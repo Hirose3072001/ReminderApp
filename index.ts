@@ -1,27 +1,25 @@
-import 'react-native-get-random-values';
+import { Platform } from 'react-native';
+
+if (Platform.OS !== 'web') {
+  require('react-native-get-random-values');
+}
 import * as Crypto from 'expo-crypto';
 
 // Polyfill cho WebCrypto subtle (Bắt buộc để Supabase dùng SHA256 cho PKCE thay vì 'plain')
-if (typeof global.crypto !== 'object') {
-  global.crypto = {} as any;
-}
-if (typeof global.crypto.subtle !== 'object') {
-  (global.crypto as any).subtle = {
-    digest: async (algorithm: any, data: Uint8Array) => {
-      const algo = typeof algorithm === 'string' ? algorithm : algorithm.name;
-      if (algo === 'SHA-256') {
-        return await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, data as any);
-      }
-      throw new Error(`Thuật toán ${algo} chưa được hỗ trợ bởi polyfill hiện tại.`);
-    },
-  };
+if (Platform.OS === 'web') {
+  if (typeof window !== 'undefined' && window.crypto) {
+    if (!(global as any).crypto) (global as any).crypto = window.crypto;
+    if (!(global as any).crypto.subtle && (window.crypto as any).subtle) {
+      (global.crypto as any).subtle = (window.crypto as any).subtle;
+    }
+  }
 }
 
 import { registerRootComponent } from 'expo';
 
-import App from './App';
+// Chọn đúng App theo platform để tránh Bundle lỗi
+const App = Platform.OS === 'web' 
+  ? require('./App.web').default 
+  : require('./App').default;
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
 registerRootComponent(App);

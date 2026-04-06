@@ -30,6 +30,7 @@ export interface Notification {
   timestamp: string;
   is_read: number; // 0 or 1
   synced: number; // 0 or 1
+  isDeleted: number; // 0 or 1
   createdAt: string;
 }
 
@@ -127,11 +128,11 @@ export const clearAllLocalData = () => {
 export const insertNotification = (notif: Notification) => {
   const db = getDB();
   db.runSync(
-    `INSERT OR REPLACE INTO notifications (id, user_id, reminder_id, type, title, body, timestamp, is_read, synced, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO notifications (id, user_id, reminder_id, type, title, body, timestamp, is_read, synced, isDeleted, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       notif.id, notif.user_id || null, notif.reminder_id || null, notif.type, notif.title, 
-      notif.body, notif.timestamp, notif.is_read, notif.synced ?? 0, notif.createdAt
+      notif.body, notif.timestamp, notif.is_read, notif.synced ?? 0, notif.isDeleted ?? 0, notif.createdAt
     ]
   );
 };
@@ -150,9 +151,9 @@ export const updateNotificationReadStatus = (id: string, isRead: number) => {
 export const getRecentNotifications = (userId: string, limit: number = 100): Notification[] => {
   const db = getDB();
   const now = new Date().toISOString();
-  // Chỉ lấy những thông báo có thời gian <= hiện tại (đã nổ)
+  // Chỉ lấy những thông báo có thời gian <= hiện tại (đã nổ) và chưa bị xóa
   return db.getAllSync(
-    'SELECT * FROM notifications WHERE user_id = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?', 
+    'SELECT * FROM notifications WHERE user_id = ? AND timestamp <= ? AND isDeleted = 0 ORDER BY timestamp DESC LIMIT ?', 
     [userId, now, limit]
   ) as Notification[];
 };

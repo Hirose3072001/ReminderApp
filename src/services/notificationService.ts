@@ -6,19 +6,23 @@ import { RepeatType } from '../store/taskStore';
 // Lazy getter để tránh circular dependency:
 // notificationService → useNotificationStore → syncService → notificationService
 const getNotificationStore = () => require('../store/useNotificationStore').useNotificationStore;
+import { getDeterministicNotifId } from '../utils/reminderUtils';
 
 // Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
+  if (Platform.OS === 'web') return false;
   /* 
   if (!Device.isDevice) {
     console.warn('Notifications only work on physical devices');
@@ -97,7 +101,7 @@ export const scheduleNotification = async (
       content: {
         title,
         body,
-        data: { taskId },
+        data: { taskId, timestamp: triggerDate.toISOString() },
         sound: 'default',
       },
       trigger,
@@ -119,6 +123,7 @@ export const cancelNotification = async (notificationId: string): Promise<void> 
 };
 
 export const cancelAllNotifications = async (): Promise<void> => {
+  if (Platform.OS === 'web') return;
   await Notifications.cancelAllScheduledNotificationsAsync();
 };
 
@@ -137,17 +142,25 @@ export const cancelTaskNotifications = async (taskId: string): Promise<void> => 
 
 // Listener for received notifications
 export const initNotificationListeners = () => {
+  if (Platform.OS === 'web') return { remove: () => {} };
   const subscription = Notifications.addNotificationReceivedListener(notification => {
     const { title, body, data } = notification.request.content;
     console.log('🔔 Notification received in foreground:', title);
     
     // Lưu vào store để đồng bộ lên Supabase
+    // Lưu vào store để đồng bộ lên Supabase
+    // Sử dụng deterministic ID để tránh lặp bản ghi
+    const reminderId = (data?.taskId as string) || (data?.reminderId as string) || null;
+    const ts = (data?.timestamp as string) || new Date().toISOString();
+    const deterministicId = getDeterministicNotifId(reminderId, ts);
+
     getNotificationStore().getState().addNotification({
+      id: deterministicId || undefined,
       title: title || 'Nhắc lịch',
       body: body || '',
-      reminder_id: (data?.taskId as string) || (data?.reminderId as string) || null,
+      reminder_id: reminderId,
       type: 'reminder',
-      timestamp: new Date().toISOString(),
+      timestamp: ts,
     });
   });
 

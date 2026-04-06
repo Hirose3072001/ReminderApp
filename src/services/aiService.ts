@@ -34,17 +34,22 @@ export const aiService = {
         { apiVersion: "v1beta" }
       );
 
+      const now = new Date();
+      const localTimeStr = now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+      
       const prompt = `
         Bạn là một trợ lý quản lý lịch trình thông minh.
         Hãy phân tích câu lệnh tiếng Việt sau và trả về định dạng JSON duy nhất.
         
         Câu lệnh: "${text}"
-        Thời gian hiện tại: ${new Date().toISOString()}
+        Thời gian hiện tại (Local GMT+7): ${localTimeStr}
         
         Quy tắc:
         1. "type": "task" nếu là công việc cần làm, "event" nếu là sự kiện/lịch họp.
         2. "action": "create" nếu người dùng muốn tạo mới, "unknown" nếu không rõ.
-        3. "dateTime": Chuyển đổi thời gian người dùng nói sang ISO string. Nếu không có giờ, mặc định 09:00.
+        3. "dateTime": Chuyển đổi thời gian người dùng nói sang ISO 8601 string với múi giờ +07:00 (Ví dụ: 2024-03-25T15:00:00+07:00). 
+           - Nếu người dùng nói "15h" hoặc "3h chiều", hãy hiểu là 15:00:00+07:00.
+           - Nếu không có giờ, mặc định 09:00:00+07:00.
         4. "subtasks": Danh sách các nhiệm vụ con (nếu có). Trả về mảng string.
         5. "title": Tiêu đề ngắn gọn, viết hoa chữ cái đầu.
         
@@ -53,7 +58,7 @@ export const aiService = {
           "action": "create" | "unknown",
           "type": "task" | "event",
           "title": "tên sự kiện/công việc",
-          "dateTime": "ISO_STRING",
+          "dateTime": "YYYY-MM-DDTHH:mm:ss+07:00",
           "subtasks": ["nhiệm vụ 1", "nhiệm vụ 2"]
         }
       `;

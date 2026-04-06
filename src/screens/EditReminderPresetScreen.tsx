@@ -18,8 +18,9 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { RouteProp } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { CustomPicker, PickerOption } from '../components/ui/CustomPicker';
+import { WebDateSegmentInput } from '../components/ui/WebDateSegmentInput';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'EditReminderPreset'>;
@@ -56,6 +57,8 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [activeRuleId, setActiveRuleId] = useState<string | null>(null);
   const [tempTimeSlot, setTempTimeSlot] = useState<string | null>(null);
+  const [webAddingTimeSlotRuleId, setWebAddingTimeSlotRuleId] = useState<string | null>(null);
+  const [webNewTimeSlot, setWebNewTimeSlot] = useState(new Date());
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -96,8 +99,13 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
 
   const addTimeSlot = (ruleId: string) => {
     setActiveRuleId(ruleId);
-    setTempTimeSlot(format(new Date(), 'HH:mm'));
-    setShowTimePicker(true);
+    if (Platform.OS === 'web') {
+      setWebAddingTimeSlotRuleId(ruleId);
+      setWebNewTimeSlot(new Date());
+    } else {
+      setTempTimeSlot(format(new Date(), 'HH:mm'));
+      setShowTimePicker(true);
+    }
   };
 
   const onTimeChange = (event: any, selectedDate?: Date) => {
@@ -259,10 +267,38 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
                           </TouchableOpacity>
                         </View>
                       ))}
-                      {rule.timeSlots.length === 0 && (
+                      {rule.timeSlots.length === 0 && !webAddingTimeSlotRuleId && (
                         <Text style={styles.infoText}>Chưa có giờ cụ thể</Text>
                       )}
                     </View>
+
+                    {Platform.OS === 'web' && webAddingTimeSlotRuleId === rule.id && (
+                      <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <WebDateSegmentInput 
+                          mode="time"
+                          value={webNewTimeSlot}
+                          onChange={setWebNewTimeSlot}
+                        />
+                        <TouchableOpacity 
+                          style={{ backgroundColor: Colors.primary, padding: 8, borderRadius: 8 }}
+                          onPress={() => {
+                            const timeStr = format(webNewTimeSlot, 'HH:mm');
+                            if (!rule.timeSlots.includes(timeStr)) {
+                              updateRule(rule.id, { timeSlots: [...rule.timeSlots, timeStr].sort() });
+                            }
+                            setWebAddingTimeSlotRuleId(null);
+                          }}
+                        >
+                          <MaterialIcons name="check" size={20} color={Colors.white} />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={{ padding: 8 }}
+                          onPress={() => setWebAddingTimeSlotRuleId(null)}
+                        >
+                          <MaterialIcons name="close" size={20} color={Colors.outline} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 )}
               </View>

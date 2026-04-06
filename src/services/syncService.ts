@@ -146,21 +146,35 @@ export const syncService = {
     const unsyncedNotifs = db.getAllSync('SELECT * FROM notifications WHERE user_id = ? AND synced = 0', [userId]) as Notification[];
     for (const notif of unsyncedNotifs) {
       try {
-        const supabaseNotif = {
-          id: notif.id,
-          user_id: userId,
-          reminder_id: notif.reminder_id || null,
-          type: notif.type,
-          title: notif.title,
-          body: notif.body,
-          timestamp: notif.timestamp,
-          is_read: notif.is_read === 1,
-          created_at: notif.createdAt
-        };
+        if (notif.isDeleted === 1) {
+          // Xóa trên Supabase
+          const { error } = await supabase
+            .from('notifications')
+            .delete()
+            .eq('id', notif.id)
+            .eq('user_id', userId);
 
-        const { error } = await supabase.from('notifications').upsert(supabaseNotif);
-        if (!error) {
-          db.runSync('UPDATE notifications SET synced = 1 WHERE id = ?', [notif.id]);
+          if (!error) {
+            // Xóa vĩnh viễn dưới local
+            db.runSync('DELETE FROM notifications WHERE id = ?', [notif.id]);
+          }
+        } else {
+          const supabaseNotif = {
+            id: notif.id,
+            user_id: userId,
+            reminder_id: notif.reminder_id || null,
+            type: notif.type,
+            title: notif.title,
+            body: notif.body,
+            timestamp: notif.timestamp,
+            is_read: notif.is_read === 1,
+            created_at: notif.createdAt
+          };
+
+          const { error } = await supabase.from('notifications').upsert(supabaseNotif);
+          if (!error) {
+            db.runSync('UPDATE notifications SET synced = 1 WHERE id = ?', [notif.id]);
+          }
         }
       } catch (err) {
         console.error('Failed to push notification:', notif.id, err);
@@ -293,12 +307,12 @@ export const syncService = {
       for (const remoteNotif of remoteNotifs) {
         try {
           db.runSync(
-            `INSERT OR REPLACE INTO notifications (id, user_id, reminder_id, type, title, body, timestamp, is_read, synced, createdAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO notifications (id, user_id, reminder_id, type, title, body, timestamp, is_read, synced, isDeleted, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               remoteNotif.id, remoteNotif.user_id, remoteNotif.reminder_id, remoteNotif.type,
               remoteNotif.title, remoteNotif.body, remoteNotif.timestamp,
-              remoteNotif.is_read ? 1 : 0, 1, remoteNotif.created_at
+              remoteNotif.is_read ? 1 : 0, 1, 0, remoteNotif.created_at
             ]
           );
           insertCount++;
@@ -410,12 +424,12 @@ export const syncService = {
             if (!existing) {
               console.log('✨ Realtime: Adding new notification', notif.id);
               db.runSync(
-                `INSERT OR REPLACE INTO notifications (id, user_id, reminder_id, type, title, body, timestamp, is_read, synced, createdAt)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT OR REPLACE INTO notifications (id, user_id, reminder_id, type, title, body, timestamp, is_read, synced, isDeleted, createdAt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                   notif.id, notif.user_id, notif.reminder_id, notif.type,
                   notif.title, notif.body, notif.timestamp,
-                  notif.is_read ? 1 : 0, 1, notif.created_at
+                  notif.is_read ? 1 : 0, 1, 0, notif.created_at
                 ]
               );
             }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, SectionList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, SectionList, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontFamily, FontSize } from '../theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -29,7 +29,9 @@ export const NotificationScreen = () => {
 
   useEffect(() => {
     loadNotifications();
-    syncData();
+    if (Platform.OS !== 'web') {
+      syncData();
+    }
 
     // Cập nhật mỗi giây để đảm bảo độ chính xác tuyệt đối
     const timer = setInterval(() => {
@@ -43,14 +45,17 @@ export const NotificationScreen = () => {
     }, 1000);
 
     // Lắng nghe ngay khi thông báo hệ thống nổ — cập nhật UI tức thì
-    const sub = Notifications.addNotificationReceivedListener(() => {
-      setNow(new Date());
-      loadNotifications();
-    });
+    let sub: any;
+    if (Platform.OS !== 'web') {
+      sub = Notifications.addNotificationReceivedListener(() => {
+        setNow(new Date());
+        loadNotifications();
+      });
+    }
 
     return () => {
       clearInterval(timer);
-      sub.remove();
+      if (sub) sub.remove();
     };
   }, []);
 

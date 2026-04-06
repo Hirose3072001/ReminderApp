@@ -41,3 +41,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# artifacts
+*.csv
+git_status.txt
+error.json
+web_bundle.js

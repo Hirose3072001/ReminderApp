@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Alert, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, FontFamily, FontSize } from '../../theme';
@@ -164,11 +164,11 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
             <View style={{ gap: 6 }}>
               <View style={styles.flexRow}>
                 <MaterialIcons name="play-circle-outline" size={16} color={Colors.outlineVariant} />
-                <Text style={[styles.valText, { fontSize: 13, flex: 0 }]}>{startTimeFull}</Text>
+                <Text style={[styles.valText, { fontSize: 13, flex: 0, minWidth: 120 }]}>{startTimeFull}</Text>
               </View>
               <View style={styles.flexRow}>
                 <MaterialIcons name="stop-circle" size={16} color={Colors.outlineVariant} />
-                <Text style={[styles.valText, { fontSize: 13, flex: 0 }]}>{endTimeFull}</Text>
+                <Text style={[styles.valText, { fontSize: 13, flex: 0, minWidth: 120 }]}>{endTimeFull}</Text>
               </View>
             </View>
           </View>
@@ -244,11 +244,11 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
             <View style={{ gap: 6 }}>
               <View style={styles.flexRow}>
                 <MaterialIcons name="play-circle-outline" size={16} color={Colors.outlineVariant} />
-                <Text style={[styles.valText, { fontSize: 13, flex: 0 }]}>{startTimeFull}</Text>
+                <Text style={[styles.valText, { fontSize: 13, flex: 0, minWidth: 120 }]}>{startTimeFull}</Text>
               </View>
               <View style={styles.flexRow}>
                 <MaterialIcons name="stop-circle" size={16} color={Colors.outlineVariant} />
-                <Text style={[styles.valText, { fontSize: 13, flex: 0 }]}>{endTimeFull}</Text>
+                <Text style={[styles.valText, { fontSize: 13, flex: 0, minWidth: 120 }]}>{endTimeFull}</Text>
               </View>
             </View>
           </View>
@@ -298,23 +298,23 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.container}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBlock}>
-            {/* Header */}
-            <View style={styles.header}>
-              <View style={{ flex: 1, marginRight: 16 }}>
-                <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                  <MaterialIcons name={isTask ? "assignment" : "stars"} size={14} color={priorityColor} />
-                  <Text style={{ color: priorityColor, fontFamily: FontFamily.interBold, fontSize: 11 }}>
-                    {isTask ? 'Công việc' : 'Sự kiện'}
-                  </Text>
-                </View>
+          {/* Fixed Header */}
+          <View style={styles.header}>
+            <View style={{ flex: 1, marginRight: 16 }}>
+              <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                <MaterialIcons name={isTask ? "assignment" : "stars"} size={14} color={priorityColor} />
+                <Text style={{ color: priorityColor, fontFamily: FontFamily.interBold, fontSize: 11 }}>
+                  {isTask ? 'Công việc' : 'Sự kiện'}
+                </Text>
               </View>
-              <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-                <MaterialIcons name="close" size={24} color={Colors.outlineVariant} />
-              </TouchableOpacity>
             </View>
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+              <MaterialIcons name="close" size={24} color={Colors.outlineVariant} />
+            </TouchableOpacity>
+          </View>
 
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBlock}>
             {/* Content Switch */}
             {isTask ? renderTaskContent() : renderEventContent()}
           </ScrollView>
@@ -354,10 +354,35 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  container: { width: '100%', backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden', maxHeight: '80%', elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15 },
-  scrollBlock: { padding: 24 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  title: { flex: 1, fontFamily: FontFamily.manropeExtraBold, fontSize: FontSize.titleLg, color: Colors.onSurface, marginRight: 16 },
+  container: { 
+    width: Platform.OS === 'web' ? 500 : '100%', 
+    maxWidth: '95%',
+    backgroundColor: '#fff', 
+    borderRadius: 24, 
+    overflow: 'hidden', 
+    maxHeight: Platform.OS === 'web' ? '95%' : '80%', 
+    elevation: 12, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 10 }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 15,
+  },
+  scrollBlock: { paddingHorizontal: 24, paddingBottom: 24 },
+  header: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'flex-start', 
+    padding: Platform.OS === 'web' ? 24 : 20, 
+    paddingBottom: 16, 
+    borderBottomWidth: 1, 
+    borderBottomColor: 'rgba(193,198,214,0.1)' 
+  },
+  title: { 
+    fontFamily: FontFamily.manropeExtraBold, 
+    fontSize: Platform.OS === 'web' ? FontSize.titleLg : FontSize.titleMd, 
+    color: Colors.onSurface, 
+    lineHeight: Platform.OS === 'web' ? 32 : 28,
+  },
   closeBtn: { padding: 4, borderRadius: 16, backgroundColor: Colors.surfaceContainerLow || '#f3f3f4' },
   contentWrap: { gap: 20 },
   section: {},

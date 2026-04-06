@@ -45,6 +45,7 @@ export const initDB = () => {
         timestamp TEXT NOT NULL,
         is_read INTEGER DEFAULT 0,
         synced INTEGER DEFAULT 0,
+        isDeleted INTEGER DEFAULT 0,
         createdAt TEXT NOT NULL
       );
     `);
@@ -85,12 +86,12 @@ export const initDB = () => {
     console.log('🔍 Current notification columns:', cols.join(', '));
 
     let needsUpdate = false;
-    const requiredCols = ['synced', 'is_read', 'user_id', 'createdAt', 'reminder_id'];
+    const requiredCols = ['synced', 'is_read', 'user_id', 'createdAt', 'reminder_id', 'isDeleted'];
     
     for (const col of requiredCols) {
       if (!cols.includes(col)) {
         try {
-          const type = (col === 'synced' || col === 'is_read') ? 'INTEGER DEFAULT 0' : 'TEXT';
+          const type = (col === 'synced' || col === 'is_read' || col === 'isDeleted') ? 'INTEGER DEFAULT 0' : 'TEXT';
           db.execSync(`ALTER TABLE notifications ADD COLUMN ${col} ${type};`);
           console.log(`✅ Added ${col} to notifications`);
         } catch (alterError) {
@@ -116,6 +117,7 @@ export const initDB = () => {
            timestamp TEXT NOT NULL,
            is_read INTEGER DEFAULT 0,
            synced INTEGER DEFAULT 0,
+           isDeleted INTEGER DEFAULT 0,
            createdAt TEXT NOT NULL
          );
        `);

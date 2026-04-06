@@ -18,6 +18,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ReminderSettingsScreen } from '../screens/ReminderSettingsScreen';
 import { EditReminderPresetScreen } from '../screens/EditReminderPresetScreen';
 import { LoginScreen } from '../screens/LoginScreen';
+import { WebLandingScreen } from '../screens/WebLandingScreen';
+import { WebLoginScreen } from '../screens/WebLoginScreen';
+import { Platform } from 'react-native';
 import { useAuthStore } from '../store/useAuthStore';
 import { supabase } from '../services/supabase';
 import { requestNotificationPermission } from '../services/notificationService';
@@ -135,13 +138,29 @@ export const AppNavigator = () => {
     <Stack.Navigator
       screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
     >
-      {isFirstTime ? (
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      ) : !isAuthenticated ? (
-        <Stack.Screen name="Login" component={LoginScreen} />
-      ) : (
-        <>
+      {Platform.OS === 'web' ? (
+        !isAuthenticated ? (
+          <>
+            <Stack.Screen name="WebLanding" component={WebLandingScreen} />
+            <Stack.Screen name="WebLogin" component={WebLoginScreen} />
+          </>
+        ) : (
           <Stack.Screen name="Main" component={MainTabs} />
+        )
+      ) : (
+        // Mobile flow
+        isFirstTime ? (
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        ) : !isAuthenticated ? (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        ) : (
+          <Stack.Screen name="Main" component={MainTabs} />
+        )
+      )}
+
+      {/* Shared and Supplementary Screens */}
+      {isAuthenticated && (
+        <>
           <Stack.Screen
             name="AddTask"
             component={AddTaskScreen}

@@ -26,6 +26,8 @@ import { scheduleNotification, cancelTaskNotifications } from '../services/notif
 import { v4 as uuidv4 } from 'uuid';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
+import { WebDateTimePicker, PickerMode } from '../components/ui/WebDateTimePicker';
+import { WebDateSegmentInput } from '../components/ui/WebDateSegmentInput';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AddTask'>;
@@ -122,6 +124,13 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
   });
   const [activeTimeSlotReminderId, setActiveTimeSlotReminderId] = useState<string | null>(null);
   const [tempTimeSlot, setTempTimeSlot] = useState<string | null>(null);
+  
+  // Web Picker state
+  const [webPickerVisible, setWebPickerVisible] = useState(false);
+  const [webPickerMode, setWebPickerMode] = useState<PickerMode>('date');
+  const [webPickerTarget, setWebPickerTarget] = useState<'start' | 'end' | 'timeSlot' | null>(null);
+  const [webAddingTimeSlotRuleId, setWebAddingTimeSlotRuleId] = useState<string | null>(null);
+  const [webNewTimeSlot, setWebNewTimeSlot] = useState(new Date());
 
   const addReminderItem = () => {
     setLocalReminderRules([...localReminderRules, { id: Date.now().toString(), timing: 'Trước khi bắt đầu', amount: '15', unit: 'Phút', timeSlots: [] }]);
@@ -151,7 +160,42 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [reminderConfig, reminderPresets]);
 
   const openDateTimePicker = (target: 'start' | 'end' | 'timeSlot', mode: 'date' | 'time' | 'datetime') => {
+    if (Platform.OS === 'web') {
+      setWebPickerTarget(target);
+      setWebPickerMode(mode === 'datetime' ? 'date' : (mode as PickerMode));
+      setWebPickerVisible(true);
+      return;
+    }
     setPickerTarget(target); setPickerMode(mode); setShowPicker(true);
+  };
+
+  const onWebDateSelect = (selectedDate: Date) => {
+    if (webPickerTarget === 'start' || webPickerTarget === 'end') {
+      const isStart = webPickerTarget === 'start';
+      const setD = isStart ? setStartTime : setEndTime;
+      setD(selectedDate);
+      
+      // Auto-transition: Hour -> Minute
+      if (webPickerMode === 'hour') {
+        setWebPickerMode('minute');
+      }
+    } else if (webPickerTarget === 'timeSlot' && activeTimeSlotReminderId) {
+      const tStr = format(selectedDate, 'HH:mm');
+      const r = localReminderRules.find(x => x.id === activeTimeSlotReminderId);
+      
+      if (r) {
+        // If we were selecting hour, we don't add the slot yet, just update the temp value for visual feedback or just wait for minute
+        if (webPickerMode === 'hour') {
+          setWebPickerMode('minute');
+        } else {
+          // Finished choosing both or specifically minute
+          if (!r.timeSlots.includes(tStr)) {
+            updateReminderRule(r.id, 'timeSlots', [...r.timeSlots, tStr]);
+          }
+          setWebPickerVisible(false);
+        }
+      }
+    }
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
@@ -292,17 +336,20 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-            <MaterialIcons name="close" size={24} color={Colors.onSurface} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{isEvent ? 'Thêm sự kiện' : 'Thêm công việc'}</Text>
-          <TouchableOpacity style={styles.iconBtn}>
-            <MaterialIcons name="more-vert" size={24} color={Colors.outline} />
-          </TouchableOpacity>
+          <View style={[styles.headerInner, Platform.OS === 'web' && { maxWidth: 800, alignSelf: 'center', width: '100%' }]}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
+              <MaterialIcons name="close" size={24} color={Colors.onSurface} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{isEvent ? 'Thêm sự kiện' : 'Thêm công việc'}</Text>
+            <TouchableOpacity style={styles.iconBtn}>
+              <MaterialIcons name="more-vert" size={24} color={Colors.outline} />
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.divider} />
 
-        <ScrollView contentContainerStyle={styles.formContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.formScrollContainer} showsVerticalScrollIndicator={false}>
+          <View style={[styles.formInner, Platform.OS === 'web' && { maxWidth: 800, alignSelf: 'center', width: '100%' }]}>
           <View style={styles.section}>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Tiêu đề</Text>
@@ -399,17 +446,32 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
           <View style={styles.section}>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>{isEvent ? 'Bắt đầu' : 'Ngày giao'}</Text>
-              <TouchableOpacity activeOpacity={0.8} style={styles.inputWithIcon} onPress={() => openDateTimePicker('start', Platform.OS === 'ios' ? 'datetime' : 'date')}>
-                <Text style={styles.dummyInputValue}>{format(startTime, 'HH:mm, dd/MM/yyyy')}</Text>
-                <MaterialIcons name="calendar-today" size={20} color={isTimeError ? '#ba1a1a' : Colors.primary} style={styles.inputIcon} />
-              </TouchableOpacity>
+              {Platform.OS === 'web' ? (
+                <WebDateSegmentInput
+                  value={startTime}
+                  onChange={setStartTime}
+                />
+              ) : (
+                <TouchableOpacity activeOpacity={0.8} style={styles.inputWithIcon} onPress={() => openDateTimePicker('start', Platform.OS === 'ios' ? 'datetime' : 'date')}>
+                  <Text style={styles.dummyInputValue}>{format(startTime, 'HH:mm, dd/MM/yyyy')}</Text>
+                  <MaterialIcons name="calendar-today" size={20} color={isTimeError ? '#ba1a1a' : Colors.primary} style={styles.inputIcon} />
+                </TouchableOpacity>
+              )}
             </View>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>{isEvent ? 'Kết thúc' : 'Hạn chót'}</Text>
-              <TouchableOpacity activeOpacity={0.8} style={[styles.inputWithIcon, isTimeError && styles.inputError]} onPress={() => openDateTimePicker('end', Platform.OS === 'ios' ? 'datetime' : 'date')}>
-                <Text style={[styles.dummyInputValue, isTimeError && styles.textError]}>{format(endTime, 'HH:mm, dd/MM/yyyy')}</Text>
-                <MaterialIcons name="schedule" size={20} color={isTimeError ? '#ba1a1a' : Colors.error || '#ba1a1a'} style={styles.inputIcon} />
-              </TouchableOpacity>
+              {Platform.OS === 'web' ? (
+                <WebDateSegmentInput
+                  value={endTime}
+                  error={isTimeError}
+                  onChange={setEndTime}
+                />
+              ) : (
+                <TouchableOpacity activeOpacity={0.8} style={[styles.inputWithIcon, isTimeError && styles.inputError]} onPress={() => openDateTimePicker('end', Platform.OS === 'ios' ? 'datetime' : 'date')}>
+                  <Text style={[styles.dummyInputValue, isTimeError && styles.textError]}>{format(endTime, 'HH:mm, dd/MM/yyyy')}</Text>
+                  <MaterialIcons name="schedule" size={20} color={isTimeError ? '#ba1a1a' : Colors.error || '#ba1a1a'} style={styles.inputIcon} />
+                </TouchableOpacity>
+              )}
               {isTimeError && <Text style={styles.errorText}>Thời gian kết thúc không thể trước thời gian bắt đầu</Text>}
             </View>
             {!isEvent && (
@@ -500,10 +562,15 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
                             <Text style={styles.subLabel}>Giờ nhắc trong ngày</Text>
                             <TouchableOpacity onPress={() => { 
                               setActiveTimeSlotReminderId(reminder.id); 
-                              setTempTimeSlot(format(new Date(), 'HH:mm'));
-                              setShowPicker(true); 
-                              setPickerTarget('timeSlot'); 
-                              setPickerMode('time'); 
+                              if (Platform.OS === 'web') {
+                                setWebAddingTimeSlotRuleId(reminder.id);
+                                setWebNewTimeSlot(new Date());
+                              } else {
+                                setTempTimeSlot(format(new Date(), 'HH:mm'));
+                                setShowPicker(true); 
+                                setPickerTarget('timeSlot'); 
+                                setPickerMode('time'); 
+                              }
                             }}>
                               <MaterialIcons name="add-alarm" size={20} color={Colors.primary} />
                             </TouchableOpacity>
@@ -517,8 +584,36 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
                                 </TouchableOpacity>
                               </View>
                             ))}
-                            {reminder.timeSlots.length === 0 && <Text style={styles.infoText}>Chưa có giờ cụ thể</Text>}
+                            {reminder.timeSlots.length === 0 && !webAddingTimeSlotRuleId && <Text style={styles.infoText}>Chưa có giờ cụ thể</Text>}
                           </View>
+
+                          {Platform.OS === 'web' && webAddingTimeSlotRuleId === reminder.id && (
+                            <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <WebDateSegmentInput 
+                                mode="time"
+                                value={webNewTimeSlot}
+                                onChange={setWebNewTimeSlot}
+                              />
+                              <TouchableOpacity 
+                                style={{ backgroundColor: Colors.primary, padding: 8, borderRadius: 8 }}
+                                onPress={() => {
+                                  const timeStr = format(webNewTimeSlot, 'HH:mm');
+                                  if (!reminder.timeSlots.includes(timeStr)) {
+                                    updateReminderRule(reminder.id, 'timeSlots', [...reminder.timeSlots, timeStr].sort());
+                                  }
+                                  setWebAddingTimeSlotRuleId(null);
+                                }}
+                              >
+                                <MaterialIcons name="check" size={20} color={Colors.white} />
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                style={{ padding: 8 }}
+                                onPress={() => setWebAddingTimeSlotRuleId(null)}
+                              >
+                                <MaterialIcons name="close" size={20} color={Colors.outline} />
+                              </TouchableOpacity>
+                            </View>
+                          )}
                         </View>
                       )}
                     </View>
@@ -536,12 +631,15 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
 
 
           <View style={{ height: 40 }} />
+          </View>
         </ScrollView>
 
         <View style={styles.bottomBar}>
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading} activeOpacity={0.9}>
-            <Text style={styles.saveBtnText}>{loading ? 'Đang lưu...' : 'Lưu'}</Text>
-          </TouchableOpacity>
+          <View style={[styles.bottomBarInner, Platform.OS === 'web' && { maxWidth: 800, alignSelf: 'center', width: '100%' }]}>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading} activeOpacity={0.9}>
+              <Text style={styles.saveBtnText}>{loading ? 'Đang lưu...' : 'Lưu'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {(showPicker && Platform.OS === 'android') && <DateTimePicker value={getPickerDateRaw()} mode={pickerMode} display="default" onChange={onDateChange} />}
@@ -568,18 +666,44 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
             </View>
           </Modal>
         )}
+
+        {Platform.OS === 'web' && (
+          <WebDateTimePicker
+            visible={webPickerVisible}
+            mode={webPickerMode as PickerMode}
+            value={webPickerTarget === 'start' ? startTime : webPickerTarget === 'end' ? endTime : new Date()}
+            onClose={() => setWebPickerVisible(false)}
+            onSelect={onWebDateSelect}
+          />
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16, backgroundColor: 'rgba(255,255,255,0.8)' },
+  container: { flex: 1, backgroundColor: Platform.OS === 'web' ? '#f0f2f5' : '#f9f9f9' },
+  header: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f3f3f4' },
+  headerInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16 },
   iconBtn: { padding: 4, borderRadius: 8 },
   headerTitle: { fontFamily: FontFamily.manropeBold, fontSize: FontSize.titleLg, color: '#1a1c1c' },
-  divider: { height: 1, backgroundColor: '#f3f3f4', width: '100%' },
-  formContainer: { paddingHorizontal: 24, paddingVertical: 16 },
+  divider: { height: 0, backgroundColor: 'transparent' },
+  formScrollContainer: { paddingBottom: 16 },
+  formInner: { 
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 600 : undefined,
+    alignSelf: 'center',
+    paddingHorizontal: 24, 
+    paddingVertical: 16, 
+    backgroundColor: Platform.OS === 'web' ? '#fff' : 'transparent', 
+    borderRadius: Platform.OS === 'web' ? 16 : 0, 
+    marginTop: Platform.OS === 'web' ? 24 : 0, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: Platform.OS === 'web' ? 0.05 : 0, 
+    shadowRadius: 10, 
+    elevation: Platform.OS === 'web' ? 1 : 0 
+  },
   section: { marginBottom: 16 },
   inputGroup: { marginBottom: 16 },
   label: { fontFamily: FontFamily.interSemiBold, fontSize: FontSize.labelMd, color: Colors.onSurfaceVariant, marginBottom: 8 },
@@ -641,7 +765,8 @@ const styles = StyleSheet.create({
     color: Colors.onSurface,
   },
   infoText: { fontFamily: FontFamily.interRegular, fontSize: 12, color: Colors.outline, fontStyle: 'italic' },
-  bottomBar: { padding: 24, backgroundColor: 'rgba(255,255,255,0.9)', borderTopWidth: 1, borderTopColor: 'rgba(193, 198, 214, 0.1)' },
+  bottomBar: { paddingVertical: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderTopWidth: 1, borderTopColor: 'rgba(193, 198, 214, 0.1)' },
+  bottomBarInner: { paddingHorizontal: 24 },
   saveBtn: { backgroundColor: Colors.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
   saveBtnText: { fontFamily: FontFamily.interBold, fontSize: FontSize.bodyLg, color: '#ffffff' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { Colors, FontFamily, FontSize } from '../theme';
@@ -137,7 +137,10 @@ export const ScheduleScreen = () => {
         <View style={styles.timeColumn}>
           <MaterialIcons name={isTask ? "fact-check" : "event"} size={20} color={highlightColor} style={{ marginBottom: 4 }} />
           <Text style={styles.timeText}>
-            {isTask ? 'Hạn: ' : ''}{item.endTime ? format(new Date(item.endTime), 'HH:mm') : (item.dueDate ? format(new Date(item.dueDate), 'HH:mm') : '--:--')}
+            {isTask ? 'Hạn: ' : ''}
+            {isTask && item.endTime 
+              ? format(new Date(item.endTime), 'HH:mm') 
+              : format(new Date(item.dueDate!), 'HH:mm')}
           </Text>
         </View>
         <View style={styles.infoColumn}>
@@ -277,10 +280,9 @@ export const ScheduleScreen = () => {
                             <View style={{ flex: 1 }}>
                               <Text style={[styles.timelineItemTitle, { color, fontSize: 16 }]} numberOfLines={1}>
                                 {isTask ? 'Hạn: ' : ''}
-                                {item.endTime 
-                                  ? format(new Date(item.endTime), 'HH:mm')
-                                  : format(new Date(item.dueDate!), 'HH:mm')
-                                } - {item.title}
+                                {isTask && item.endTime 
+                                  ? format(new Date(item.endTime), 'HH:mm') 
+                                  : format(new Date(item.dueDate!), 'HH:mm')} - {item.title}
                               </Text>
                             </View>
                            {!isTask ? (
@@ -353,8 +355,8 @@ export const ScheduleScreen = () => {
       </View>
 
       {viewMode === 'month' ? (
-        <View style={{ flex: 1 }}>
-          <View style={styles.calendarWrapper}>
+        <View style={[styles.monthViewContainer, Platform.OS === 'web' && styles.monthViewWeb]}>
+          <View style={[styles.calendarWrapper, Platform.OS === 'web' && styles.calendarWrapperWeb]}>
             <Calendar
               current={selectedDate}
               onDayPress={(day: any) => setSelectedDate(day.dateString)}
@@ -385,24 +387,29 @@ export const ScheduleScreen = () => {
             />
           </View>
           
-          <View style={styles.agendaHeader}>
-            <Text style={styles.agendaTitle}>Lịch trình hôm nay</Text>
-            <Text style={styles.agendaDate}>
-              {format(new Date(selectedDate), 'EEEE', { locale: vi })}
-            </Text>
-          </View>
+          <View style={Platform.OS === 'web' ? styles.agendaWrapperWeb : { flex: 1 }}>
+            <View style={styles.agendaHeader}>
+              <Text style={styles.agendaTitle}>Lịch trình hôm nay</Text>
+              <Text style={styles.agendaDate}>
+                {format(new Date(selectedDate), 'EEEE', { locale: vi })}
+              </Text>
+            </View>
 
-          <FlatList
-            data={filteredReminders}
-            keyExtractor={(item) => item.id}
-            renderItem={renderAgendaItem}
-            contentContainerStyle={styles.agendaList}
-            ListEmptyComponent={() => (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>Không có sự kiện hay công việc nào.</Text>
-              </View>
-            )}
-          />
+            <FlatList
+              data={filteredReminders}
+              keyExtractor={(item) => item.id}
+              renderItem={renderAgendaItem}
+              contentContainerStyle={[
+                styles.agendaList, 
+                Platform.OS === 'web' && styles.agendaListWeb
+              ]}
+              ListEmptyComponent={() => (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>Không có sự kiện hay công việc nào.</Text>
+                </View>
+              )}
+            />
+          </View>
         </View>
       ) : (
         <View style={styles.dailyViewContainer}>
@@ -465,41 +472,95 @@ const styles = StyleSheet.create({
   filterText: { fontFamily: FontFamily.interSemiBold, fontSize: FontSize.labelSm, color: Colors.primary },
   
   // Month View
+  monthViewContainer: { flex: 1 },
+  monthViewWeb: { flexDirection: 'row', paddingHorizontal: 10 },
   calendarWrapper: {
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 24,
     backgroundColor: Colors.surfaceContainerLowest || '#fff',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 24,
-    elevation: 4,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.04)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.04,
+        shadowRadius: 24,
+        elevation: 4,
+      }
+    }),
     paddingBottom: 16,
   },
-  agendaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 20, marginTop: 16, marginBottom: 12 },
-  agendaTitle: { fontFamily: FontFamily.manropeExtraBold, fontSize: FontSize.titleLg, color: Colors.onSurface },
-  agendaDate: { fontFamily: FontFamily.interMedium, fontSize: FontSize.labelMd, color: Colors.primary },
+  calendarWrapperWeb: {
+    flex: 0.6, // 6 phần
+    marginHorizontal: 10,
+    marginTop: 10,
+    maxHeight: 500,
+  },
+  agendaWrapperWeb: {
+    flex: 0.4, // 4 phần
+    paddingLeft: 10,
+  },
+  agendaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 12, marginTop: 8, marginBottom: 4 },
+  agendaTitle: { 
+    fontFamily: FontFamily.manropeExtraBold, 
+    fontSize: Platform.OS === 'web' ? FontSize.titleSm : 20, 
+    color: Colors.onSurface 
+  },
+  agendaDate: { fontFamily: FontFamily.interMedium, fontSize: 11, color: Colors.primary },
   agendaList: { paddingHorizontal: 16, paddingBottom: 120 },
+  agendaListWeb: { paddingBottom: 50 },
   agendaItem: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerLowest || '#fff',
-    padding: 16, borderRadius: 16, marginBottom: 12, borderLeftWidth: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.03, shadowRadius: 16, elevation: 2,
+    padding: 8, borderRadius: 12, marginBottom: 6, borderLeftWidth: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.03)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.03,
+        shadowRadius: 16,
+        elevation: 2,
+      }
+    }),
   },
-  timeColumn: { width: 85, alignItems: 'center', justifyContent: 'center' },
-  timeText: { fontFamily: FontFamily.interBold, fontSize: FontSize.labelSm, color: Colors.outlineVariant },
-  infoColumn: { flex: 1, paddingLeft: 12 },
-  titleText: { fontFamily: FontFamily.interBold, fontSize: FontSize.bodyLg, color: Colors.onSurface, marginBottom: 4 },
-  descText: { fontFamily: FontFamily.interRegular, fontSize: FontSize.bodySm, color: Colors.onSurfaceVariant },
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
-  emptyText: { fontFamily: FontFamily.interMedium, color: Colors.onSurfaceVariant },
+  timeColumn: { width: 60, alignItems: 'center', justifyContent: 'center' },
+  timeText: { fontFamily: FontFamily.interBold, fontSize: 10, color: Colors.outlineVariant },
+  infoColumn: { flex: 1, paddingLeft: 8 },
+  titleText: { 
+    fontFamily: FontFamily.interBold, 
+    fontSize: Platform.OS === 'web' ? FontSize.bodySm : FontSize.bodyLg, 
+    color: Colors.onSurface, 
+    marginBottom: 2 
+  },
+  descText: { fontFamily: FontFamily.interRegular, fontSize: 11, color: Colors.onSurfaceVariant },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 20 },
+  emptyText: { fontFamily: FontFamily.interMedium, fontSize: 12, color: Colors.onSurfaceVariant },
 
   // Week View (Daily Schedule)
   dailyViewContainer: { flex: 1, backgroundColor: Colors.surface },
   weekStripContainer: { marginBottom: 16, paddingTop: 8, paddingHorizontal: 16 },
   dayCard: { flex: 1, height: 75, borderRadius: 16, backgroundColor: Colors.surfaceContainerLow || '#f3f3f4', alignItems: 'center', justifyContent: 'center' },
-  dayCardSelected: { backgroundColor: Colors.primary, shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  dayCardSelected: { 
+    backgroundColor: Colors.primary,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 4px 8px rgba(0, 110, 245, 0.3)',
+      },
+      default: {
+        shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4,
+      }
+    })
+  },
   dayCardLabel: { fontFamily: FontFamily.interBold, fontSize: 10, color: Colors.onSurfaceVariant, paddingBottom: 4 },
   dayCardLabelSelected: { color: 'rgba(255,255,255,0.8)' },
   dayCardDate: { fontFamily: FontFamily.manropeExtraBold, fontSize: 18, color: Colors.onSurface },
@@ -516,9 +577,28 @@ const styles = StyleSheet.create({
   currentTimeDot: { position: 'absolute', left: -4, top: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: '#D32F2F' },
   
   hourItemsContainer: { paddingLeft: 44 },
-  timelineItemWrap: { borderRadius: 12, padding: 12, borderLeftWidth: 4, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  timelineItemWrap: { 
+    borderRadius: 12, padding: 12, borderLeftWidth: 4,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+      },
+      default: {
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+      }
+    })
+  },
   timelineItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  timelineItemTitle: { fontFamily: FontFamily.interBold, fontSize: FontSize.labelMd, flexShrink: 1 },
+  timelineItemTitle: { 
+    fontFamily: FontFamily.interBold, 
+    fontSize: Platform.OS === 'web' ? FontSize.labelMd : 15, 
+    flexShrink: 1,
+    color: Colors.onSurface 
+  },
   timelineItemTime: { fontFamily: FontFamily.interMedium, fontSize: 11, marginTop: 4 },
 
   statsContainer: { flexDirection: 'row', paddingHorizontal: 16, marginTop: 40, gap: 16 },

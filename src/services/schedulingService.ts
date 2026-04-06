@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { cancelTaskNotifications, scheduleNotification } from './notificationService';
-import { generateTriggersFromRules } from '../utils/reminderUtils';
+import { generateTriggersFromRules, getDeterministicNotifId } from '../utils/reminderUtils';
 import { Reminder, Notification, getAllReminders } from '../database/queries';
 import { getDB } from '../database/index';
 
@@ -18,10 +18,10 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
     // 1. Hủy các lịch cũ gán với Reminder này
     await cancelTaskNotifications(reminder.id);
 
-    // 2. Xóa các bản ghi thông báo cũ (chưa đọc, trong tương lai) để tránh trùng lặp
+    // 2. Đánh dấu xóa các bản ghi thông báo cũ (chưa đọc, trong tương lai) để đồng bộ xóa trên Supabase
     const db = getDB();
     db.runSync(
-      `DELETE FROM notifications WHERE reminder_id = ? AND is_read = 0 AND timestamp > ?`,
+      `UPDATE notifications SET isDeleted = 1, synced = 0 WHERE reminder_id = ? AND is_read = 0 AND timestamp > ?`,
       [reminder.id, new Date().toISOString()]
     );
 
@@ -97,7 +97,8 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
       );
 
       // Gom vào danh sách để lưu hàng loạt (Batch Save) để tăng hiệu năng và tránh spam Log
-      const deterministicNotifId = `notif_${reminder.id}_${trigger.date.getTime()}`;
+      const deterministicNotifId = getDeterministicNotifId(reminder.id, trigger.date);
+      if (!deterministicNotifId) continue;
       
       plannedNotifications.push({
         id: deterministicNotifId,
@@ -108,6 +109,7 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
         timestamp: trigger.date.toISOString(),
         is_read: 0,
         synced: 0,
+        isDeleted: 0,
       });
     }
 

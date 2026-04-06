@@ -13,6 +13,16 @@ export interface TriggerTime {
   title: string;
 }
 
+/**
+ * Tạo ID thông báo mang tính định danh (deterministic).
+ * Giúp tránh lặp dữ liệu trên Supabase khi đồng bộ.
+ */
+export const getDeterministicNotifId = (reminderId: string | null, timestamp: string | Date): string | null => {
+  if (!reminderId) return null;
+  const timeMs = (typeof timestamp === 'string' ? new Date(timestamp) : timestamp).getTime();
+  return `notif_${reminderId}_${timeMs}`;
+};
+
 export const generateTriggersFromRules = (
   rulesStr: string | null,
   startTime: Date,
@@ -76,7 +86,7 @@ export const generateTriggersFromRules = (
                   const timeStr2 = format(baseDate, 'HH:mm dd/MM/yyyy');
                   displayBody = isEvent
                     ? `Sự kiện "${title.trim()}" ${actionText} vào lúc ${timeStr2}`
-                    : `Công việc "${title.trim()}" ${actionText} vào lúc ${timeStr2}. Thực hiện ngay!`;
+                    : `Công việc "${title.trim()}" ${actionText} vào lúc ${timeStr2}`;
                 } else {
                   displayBody = isEvent
                     ? `Sự kiện "${title.trim()}" ${actionText} sau ${daysLeft} ngày nữa`
@@ -101,7 +111,7 @@ export const generateTriggersFromRules = (
             const timeStr2 = format(baseDate, 'HH:mm dd/MM/yyyy');
             const displayBody = isEvent
               ? `Sự kiện "${title.trim()}" ${actionText} vào lúc ${timeStr2}`
-              : `Công việc "${title.trim()}" ${actionText} vào lúc ${timeStr2}. Thực hiện ngay!`;
+              : `Công việc "${title.trim()}" ${actionText} vào lúc ${timeStr2}`;
 
             triggers.push({
               date: triggerDate,

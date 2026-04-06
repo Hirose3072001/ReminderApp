@@ -4,6 +4,7 @@ import { Notification } from '../database/queries';
 import { useAuthStore } from './useAuthStore';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { getDeterministicNotifId } from '../utils/reminderUtils';
 
 // Lazy getter để tránh circular dependency:
 // useNotificationStore → syncService → schedulingService → notificationService → useNotificationStore
@@ -48,14 +49,20 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     const user = useAuthStore.getState().user;
     if (!user) return;
 
+    const reminderId = notifData.reminder_id || null;
+    const ts = notifData.timestamp || new Date().toISOString();
+    
+    // Tạo ID định danh nếu chưa có
+    const finalId = notifData.id || getDeterministicNotifId(reminderId, ts) || uuidv4();
+
     const newNotif: Notification = {
-      id: notifData.id || uuidv4(),
+      id: finalId,
       user_id: user.id,
-      reminder_id: notifData.reminder_id || null,
+      reminder_id: reminderId,
       type: notifData.type || 'reminder',
       title: notifData.title || 'Nhắc lịch',
       body: notifData.body || '',
-      timestamp: new Date().toISOString(),
+      timestamp: ts,
       is_read: 0,
       synced: 0,
       createdAt: new Date().toISOString(),
@@ -74,14 +81,18 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (!user || notifDataList.length === 0) return;
 
     for (const data of notifDataList) {
+      const reminderId = data.reminder_id || null;
+      const ts = data.timestamp || new Date().toISOString();
+      const finalId = data.id || getDeterministicNotifId(reminderId, ts) || uuidv4();
+
       const newNotif: Notification = {
-        id: data.id || uuidv4(),
+        id: finalId,
         user_id: user.id,
-        reminder_id: data.reminder_id || null,
+        reminder_id: reminderId,
         type: data.type || 'reminder',
         title: data.title || 'Nhắc lịch',
         body: data.body || '',
-        timestamp: new Date().toISOString(),
+        timestamp: ts,
         is_read: 0,
         synced: 0,
         createdAt: new Date().toISOString(),
@@ -112,8 +123,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   deleteNotification: (id: string) => {
-    Queries.deleteNotification(id);
+    // Chuyển sang Xóa mềm (Soft Delete) để Sync Service có thể xóa trên Supabase
+    const db = require('../database/index').getDB();
+    db.runSync('UPDATE notifications SET isDeleted = 1, synced = 0 WHERE id = ?', [id]);
     get().loadNotifications();
+    getSyncService().markDirty();
   },
 
   syncData: async () => {

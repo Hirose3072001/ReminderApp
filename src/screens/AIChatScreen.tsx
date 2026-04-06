@@ -117,26 +117,34 @@ export const AIChatScreen = () => {
     }
   };
 
-  const confirmTask = (messageId: string) => {
-    setMessages(prev => prev.map(msg => {
-      if (msg.id === messageId && msg.actionData) {
-        // Thực hiện tạo trong database
-        addReminder({
-          type: msg.actionData.params.type,
-          title: msg.actionData.params.title,
-          description: msg.actionData.params.description,
-          priority: 'medium',
-          dueDate: msg.actionData.params.dueDate,
-        });
+  const confirmTask = async (messageId: string) => {
+    const message = messages.find(msg => msg.id === messageId);
+    if (!message || !message.actionData) return;
 
-        return { 
-          ...msg, 
-          status: 'confirmed' as const,
-          text: `Tuyệt vời! Tôi đã thêm xong ${msg.actionData.params.type === 'event' ? 'sự kiện' : 'công việc'} "${msg.actionData.params.title}" vào lịch của bạn.`
-        };
-      }
-      return msg;
-    }));
+    try {
+      // Thực hiện tạo trong database (Web store trả về Promise)
+      await addReminder({
+        type: message.actionData.params.type,
+        title: message.actionData.params.title,
+        description: message.actionData.params.description,
+        priority: 'medium',
+        dueDate: message.actionData.params.dueDate,
+      });
+
+      // Cập nhật trạng thái tin nhắn trong chat sau khi add thành công
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === messageId && msg.actionData) {
+          return { 
+            ...msg, 
+            status: 'confirmed' as const,
+            text: `Tuyệt vời! Tôi đã thêm xong ${msg.actionData.params.type === 'event' ? 'sự kiện' : 'công việc'} "${msg.actionData.params.title}" vào lịch của bạn.`
+          };
+        }
+        return msg;
+      }));
+    } catch (error) {
+      console.error('Error confirming task from AI Chat:', error);
+    }
   };
 
   const cancelTask = (messageId: string) => {
