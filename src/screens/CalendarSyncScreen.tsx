@@ -150,8 +150,7 @@ export const CalendarSyncScreen = () => {
           }
         });
       } else {
-        // Các loại khác đang phát triển: Bật ngay rồi báo
-        updateProfile({ [field]: true });
+        // Các loại khác đang phát triển: Chỉ thông báo, không cho phép bật
         Alert.alert('Thông báo', `Chức năng kết nối ${type.charAt(0).toUpperCase() + type.slice(1)} đang được phát triển.`);
       }
     } catch (error) {

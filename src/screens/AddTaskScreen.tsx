@@ -120,7 +120,13 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
     if (isEdit && editItem?.reminderRules) {
       try { return JSON.parse(editItem.reminderRules); } catch (e) { console.error(e); }
     }
-    return [{ id: '1', timing: 'Trước khi bắt đầu', amount: '15', unit: 'Phút', timeSlots: ['09:00'] }];
+    return [{ 
+      id: '1', 
+      timing: isEvent ? 'Khi bắt đầu' : 'Khi kết thúc', 
+      amount: '0', 
+      unit: 'Phút', 
+      timeSlots: [] 
+    }];
   });
   const [activeTimeSlotReminderId, setActiveTimeSlotReminderId] = useState<string | null>(null);
   const [tempTimeSlot, setTempTimeSlot] = useState<string | null>(null);
@@ -133,7 +139,13 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
   const [webNewTimeSlot, setWebNewTimeSlot] = useState(new Date());
 
   const addReminderItem = () => {
-    setLocalReminderRules([...localReminderRules, { id: Date.now().toString(), timing: 'Trước khi bắt đầu', amount: '15', unit: 'Phút', timeSlots: [] }]);
+    setLocalReminderRules([...localReminderRules, { 
+      id: Date.now().toString(), 
+      timing: isEvent ? 'Khi bắt đầu' : 'Khi kết thúc', 
+      amount: '0', 
+      unit: 'Phút', 
+      timeSlots: [] 
+    }]);
   };
   const updateReminderRule = (id: string, field: keyof LocalReminderRule, value: any) => {
     setLocalReminderRules(localReminderRules.map(r => r.id === id ? { ...r, [field]: value } : r));

@@ -31,7 +31,9 @@ interface Message {
       type: 'event' | 'task';
       title: string;
       description: string;
-      dueDate: string;
+      startTime: string;
+      endTime: string;
+      isDeadline?: boolean;
       subtasks?: string[];
     };
   };
@@ -78,8 +80,16 @@ export const AIChatScreen = () => {
       };
 
       if (parsed.action === 'create') {
-        const timeStr = format(new Date(parsed.dateTime), 'HH:mm - dd/MM/yyyy', { locale: vi });
-        botReply.text = `Tôi đã nhận được yêu cầu ${parsed.type === 'event' ? 'sự kiện' : 'công việc'}: "${parsed.title}" vào lúc ${timeStr}.\nBạn có muốn thêm mục này vào lịch không?`;
+        const startStr = format(new Date(parsed.startDateTime), 'HH:mm - dd/MM/yyyy', { locale: vi });
+        const endStr = format(new Date(parsed.endDateTime), 'HH:mm - dd/MM/yyyy', { locale: vi });
+        
+        if (parsed.type === 'task' && parsed.isDeadline) {
+          botReply.text = `Tôi đã nhận được yêu cầu công việc: "${parsed.title}" với hạn chót là ${endStr}.\nBạn có muốn thêm mục này vào lịch không?`;
+        } else if (parsed.type === 'event') {
+          botReply.text = `Tôi đã nhận được yêu cầu sự kiện: "${parsed.title}" diễn ra từ ${startStr} đến ${endStr}.\nBạn có muốn thêm mục này vào lịch không?`;
+        } else {
+          botReply.text = `Tôi đã nhận được yêu cầu công việc: "${parsed.title}" vào lúc ${startStr}.\nBạn có muốn thêm mục này vào lịch không?`;
+        }
         
         // Chuẩn bị dữ liệu để xác nhận
         let finalDescription = `Được tạo bởi Trợ lý AI: ${userMessage.text}`;
@@ -94,7 +104,9 @@ export const AIChatScreen = () => {
             type: parsed.type,
             title: parsed.title,
             description: finalDescription,
-            dueDate: parsed.dateTime,
+            startTime: parsed.startDateTime,
+            endTime: parsed.endDateTime,
+            isDeadline: parsed.isDeadline,
             subtasks: parsed.subtasks
           }
         };
@@ -128,7 +140,8 @@ export const AIChatScreen = () => {
         title: message.actionData.params.title,
         description: message.actionData.params.description,
         priority: 'medium',
-        dueDate: message.actionData.params.dueDate,
+        dueDate: message.actionData.params.startTime,
+        endTime: message.actionData.params.endTime,
       });
 
       // Cập nhật trạng thái tin nhắn trong chat sau khi add thành công
@@ -194,7 +207,15 @@ export const AIChatScreen = () => {
               </View>
               <View style={styles.previewRow}>
                 <MaterialIcons name="access-time" size={14} color={Colors.onSurfaceVariant} />
-                <Text style={styles.previewTime}>{format(new Date(item.actionData.params.dueDate), 'HH:mm - dd/MM/yyyy')}</Text>
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  {item.actionData.params.isDeadline ? (
+                    <Text style={styles.previewTime}>Hạn: {format(new Date(item.actionData.params.endTime), 'HH:mm - dd/MM/yyyy')}</Text>
+                  ) : item.actionData.params.type === 'event' ? (
+                    <Text style={styles.previewTime}>{format(new Date(item.actionData.params.startTime), 'HH:mm')} - {format(new Date(item.actionData.params.endTime), 'HH:mm - dd/MM/yyyy')}</Text>
+                  ) : (
+                    <Text style={styles.previewTime}>{format(new Date(item.actionData.params.startTime), 'HH:mm - dd/MM/yyyy')}</Text>
+                  )}
+                </View>
               </View>
               {item.actionData.params.subtasks && item.actionData.params.subtasks.length > 0 && (
                 <View style={styles.previewSubtasks}>

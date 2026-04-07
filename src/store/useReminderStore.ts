@@ -37,13 +37,17 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
     const user = useAuthStore.getState().user;
     if (!user) return;
 
+    const defaultRules = reminderData.type === 'event' 
+      ? JSON.stringify([{ id: '1', timing: 'Khi bắt đầu', amount: '0', unit: 'Phút', timeSlots: [] }])
+      : JSON.stringify([{ id: '1', timing: 'Khi kết thúc', amount: '0', unit: 'Phút', timeSlots: [] }]);
+
     const newReminder: Reminder = {
       description: '',
       priority: 'medium',
       reminderTime: null,
       reminderRepeat: null,
       notificationId: null,
-      reminderRules: null,
+      reminderRules: defaultRules,
       ...reminderData,
       id: reminderData.id || uuidv4(),
       user_id: user.id,
@@ -113,6 +117,10 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
 
     await syncService.performFullSync(user.id);
     get().loadReminders();
+  },
+
+  resetStore: () => {
+    set({ reminders: [] });
   }
 }));
 
