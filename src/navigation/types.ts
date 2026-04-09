@@ -3,6 +3,7 @@ import { Reminder } from '../database/queries';
 export type RootStackParamList = {
   Onboarding: undefined;
   Login: undefined;
+  Syncing: undefined;
   WebLanding: undefined;
   WebLogin: undefined;
   Main: undefined;

@@ -12,7 +12,7 @@ const getNotificationStore = () => require('../store/useNotificationStore').useN
  * Hàm này có thể được gọi từ bất kỳ đâu: store, syncService, app startup.
  */
 export const handleScheduling = async (reminder: Reminder): Promise<void> => {
-  console.log('🚀 handleScheduling started for:', reminder.title, '| rules:', reminder.reminderRules);
+  // if (__DEV__) console.log('🚀 handleScheduling started for:', reminder.title);
 
   try {
     // 1. Hủy các lịch cũ gán với Reminder này
@@ -61,8 +61,6 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
     const startTime = parseLocalDateTime(dueDateStr);
     const endTime = reminder.endTime ? parseLocalDateTime(reminder.endTime) : startTime;
 
-    console.log(`📅 startTime: ${startTime.toISOString()} | endTime: ${endTime.toISOString()} | now: ${new Date().toISOString()}`);
-
 
     // 4. Tính toán các thời điểm nhắc nhở dựa trên quy tắc (rules)
     const triggers = generateTriggersFromRules(
@@ -73,11 +71,8 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
       reminder.type
     );
 
-    console.log(`✅ Generated ${triggers.length} triggers for "${reminder.title}"`);
-    triggers.forEach(t => console.log(`  → ${t.date.toISOString()} (${t.body.substring(0, 60)})`));
-
     if (triggers.length === 0) {
-      console.warn('⚠️ No future triggers generated. All time slots may be in the past.');
+      // console.warn('⚠️ No future triggers generated. All time slots may be in the past.');
       return;
     }
 
@@ -85,7 +80,7 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
     const plannedNotifications: Partial<Notification>[] = [];
     
     for (const trigger of triggers) {
-      console.log(`⏰ Scheduling notification at: ${trigger.date.toISOString()}`);
+      // console.log(`⏰ Scheduling notification at: ${trigger.date.toISOString()}`);
 
       // Hẹn giờ nổ thông báo (Push Notification)
       await scheduleNotification(
@@ -117,7 +112,6 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
     if (plannedNotifications.length > 0) {
       try {
         getNotificationStore().getState().addNotificationsBatch(plannedNotifications);
-        console.log(`📝 ${plannedNotifications.length} notification records planned for "${reminder.title}"`);
       } catch (err) {
         console.error('❌ Failed to save batch notifications:', err);
       }
@@ -135,14 +129,11 @@ export const rescheduleAllReminders = async (userId: string): Promise<void> => {
   console.log('🔄 rescheduleAllReminders started for user:', userId);
   try {
     const reminders = getAllReminders(userId);
-    console.log(`📋 Found ${reminders.length} reminders to reschedule`);
-
     for (const reminder of reminders) {
       if (reminder.reminderRules && reminder.completed !== 1) {
         await handleScheduling(reminder);
       }
     }
-    console.log('✅ rescheduleAllReminders completed');
   } catch (error) {
     console.error('❌ rescheduleAllReminders failed:', error);
   }

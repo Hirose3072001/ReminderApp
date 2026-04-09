@@ -27,11 +27,17 @@ interface AuthState {
   profile: Profile | null;
   isFirstTime: boolean;
   isAuthenticated: boolean;
+  isSyncing: boolean;
+  isInitialSync: boolean;
+  profileDirty: boolean;
   setSession: (session: Session | null) => void;
   setFirstTime: (value: boolean) => void;
+  setSyncing: (value: boolean) => void;
+  setInitialSync: (value: boolean) => void;
   signOut: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   updateProfile: (data: Partial<Profile>) => Promise<{ success: boolean; error?: string }>;
+  updateProfileLocally: (data: Partial<Profile>) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -42,6 +48,9 @@ export const useAuthStore = create<AuthState>()(
       profile: null,
       isFirstTime: true,
       isAuthenticated: false,
+      isSyncing: false,
+      isInitialSync: false,
+      profileDirty: false,
       setSession: (session) => {
         set({ 
           session, 
@@ -51,10 +60,12 @@ export const useAuthStore = create<AuthState>()(
         if (session) {
           get().fetchProfile();
         } else {
-          set({ profile: null });
+          set({ profile: null, isSyncing: false });
         }
       },
       setFirstTime: (value) => set({ isFirstTime: value }),
+      setSyncing: (value) => set({ isSyncing: value }),
+      setInitialSync: (value) => set({ isInitialSync: value }),
       fetchProfile: async () => {
         const user = get().user;
         if (!user) return;
@@ -140,10 +151,23 @@ export const useAuthStore = create<AuthState>()(
           return { success: false, error: error.message };
         }
       },
+      updateProfileLocally: (profileData) => {
+        const currentProfile = get().profile;
+        if (!currentProfile) return;
+        
+        set({ 
+          profile: { ...currentProfile, ...profileData },
+          profileDirty: true 
+        });
+      },
     }),
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => {
+        const { isInitialSync, isSyncing, profileDirty, ...rest } = state;
+        return rest;
+      },
     }
   )
 );

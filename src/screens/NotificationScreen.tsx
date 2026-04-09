@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, SectionList, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, SectionList, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontFamily, FontSize } from '../theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -13,10 +13,13 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import * as Notifications from 'expo-notifications';
+import { supabase } from '../services/supabase';
+import { invitationService } from '../services/invitationService';
+import { Alert } from 'react-native';
 
 export const NotificationScreen = () => {
   const { reminders } = useReminderStore();
-  const { notifications: storeNotifications, loadNotifications, markAsRead, syncData } = useNotificationStore();
+  const { notifications: storeNotifications, loadNotifications, markAsRead, syncData, deleteNotification } = useNotificationStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   
   const [now, setNow] = useState(new Date());
@@ -24,8 +27,11 @@ export const NotificationScreen = () => {
   const [popupVisible, setPopupVisible] = useState(false);
   const [activeFilter, setActiveFilter] = useState('Tất cả');
   const [showFilter, setShowFilter] = useState(false);
+  const [isInvitationMode, setIsInvitationMode] = useState(false);
+  const [currentSenderEmail, setCurrentSenderEmail] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
 
-  const FILTERS = ['Tất cả', 'Nhắc lịch', 'Đã hoàn thành', 'Đã quá hạn'];
+  const FILTERS = ['Tất cả', 'Nhắc lịch', 'Lời mời cộng tác', 'Đã hoàn thành', 'Đã quá hạn'];
 
   useEffect(() => {
     loadNotifications();
@@ -33,18 +39,15 @@ export const NotificationScreen = () => {
       syncData();
     }
 
-    // Cập nhật mỗi giây để đảm bảo độ chính xác tuyệt đối
     const timer = setInterval(() => {
       const current = new Date();
       setNow(current);
       
-      // Chỉ load dữ liệu từ DB mỗi 5 giây hoặc khi bắt đầu phút mới để tiết kiệm hiệu năng
       if (current.getSeconds() % 5 === 0) {
         loadNotifications();
       }
     }, 1000);
 
-    // Lắng nghe ngay khi thông báo hệ thống nổ — cập nhật UI tức thì
     let sub: any;
     if (Platform.OS !== 'web') {
       sub = Notifications.addNotificationReceivedListener(() => {
@@ -74,18 +77,17 @@ export const NotificationScreen = () => {
       return format(date, 'dd/MM/yyyy');
     };
 
-    // 1. Phân loại theo filter
     let filtered = storeNotifications;
     if (activeFilter !== 'Tất cả') {
       filtered = filtered.filter(n => {
         if (activeFilter === 'Nhắc lịch') return n.title === 'Nhắc lịch';
+        if (activeFilter === 'Lời mời cộng tác') return n.type === 'invitation';
         if (activeFilter === 'Đã hoàn thành') return n.title === 'Đã hoàn thành';
         if (activeFilter === 'Đã quá hạn') return n.title === 'Đã quá hạn';
         return true;
       });
     }
 
-    // 2. Nhóm theo Ngày (Date Grouping)
     const groups: { [key: string]: any[] } = {};
     filtered.forEach(notif => {
       const d = parseISO(notif.timestamp);
@@ -108,7 +110,6 @@ export const NotificationScreen = () => {
       });
     });
 
-    // 3. Chuyển sang định dạng SectionList và sắp xếp theo thời gian
     const sections = Object.keys(groups).map(title => ({
       title,
       data: groups[title].sort((a, b) => b.rawTime.getTime() - a.rawTime.getTime()),
@@ -144,51 +145,135 @@ export const NotificationScreen = () => {
     });
   };
 
+  const handleAcceptInvitation = async (invId: string, reminder: Reminder) => {
+    try {
+      setLoading(true);
+      const res = await invitationService.respondToInvitation(invId, 'accepted', reminder);
+      if (res.success) {
+        Alert.alert('Thành công', 'Đã thêm công việc vào lịch của bạn.');
+        setPopupVisible(false);
+        loadNotifications();
+      } else {
+        Alert.alert('Lỗi', 'Không thể chấp nhận lời mời.');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeclineInvitation = async (invId: string) => {
+    try {
+      setLoading(true);
+      const res = await invitationService.respondToInvitation(invId, 'rejected');
+      if (res.success) {
+        Alert.alert('Đã từ chối', 'Bạn đã từ chối lời mời này.');
+        setPopupVisible(false);
+        loadNotifications();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const renderItem = ({ item }: { item: any }) => {
     let iconColor: string = Colors.primary;
     let iconName: any = item.is_read === 0 ? 'notifications-active' : 'notifications-none';
     
     const bodyLower = (item.body || '').toLowerCase();
-    
-    // Logic màu sắc theo yêu cầu mới nhất:
-    // 1. "đã bắt đầu" -> Xanh lá
-    // 2. "đã kết thúc" -> Đỏ 
-    // 3. "Đã hoàn thành" -> Xanh lá
-    // 4. "Đã quá hạn" -> Đỏ
-    // 5. Còn lại (Sắp bắt đầu, Sắp kết thúc, v.v.) -> Xanh biển
-    
     const isStarted = bodyLower.includes('đã bắt đầu');
     const isEnded = bodyLower.includes('đã kết thúc');
+    const isInvitation = item.type === 'invitation';
 
-    if (isStarted) iconColor = '#2E7D32'; // Green
-    else if (isEnded) iconColor = '#C62828'; // Red
-    else if (item.title === 'Đã quá hạn') iconColor = '#C62828'; // Red
-    else if (item.title === 'Đã hoàn thành') iconColor = '#2E7D32'; // Green
-    else iconColor = Colors.primary; // Blue (Mặc định cho các thông báo "Sắp...")
+    if (isInvitation) {
+      iconColor = '#673AB7';
+      iconName = 'person-add';
+    } else if (isStarted) {
+      iconColor = '#2E7D32';
+      iconName = item.is_read === 0 ? 'notifications-active' : 'notifications-none';
+    } else if (isEnded || item.title === 'Đã quá hạn') {
+      iconColor = '#C62828';
+      iconName = item.is_read === 0 ? 'notifications-active' : 'notifications-none';
+    } else if (item.title === 'Đã hoàn thành') {
+      iconColor = '#2E7D32';
+      iconName = 'check-circle';
+    } else {
+      iconColor = Colors.primary;
+      iconName = item.is_read === 0 ? 'notifications-active' : 'notifications-none';
+    }
+
+    const handleDelete = () => {
+      Alert.alert(
+        "Xóa thông báo",
+        "Bạn có chắc muốn xóa thông báo này không?",
+        [
+          { text: "Hủy", style: "cancel" },
+          { 
+            text: "Xóa", 
+            style: "destructive", 
+            onPress: () => deleteNotification(item.id) 
+          }
+        ]
+      );
+    };
     
     return (
-      <TouchableOpacity 
-        style={[styles.notifCard, item.is_read === 0 && styles.unreadCard]}
-        onPress={() => {
-          if (item.is_read === 0) markAsRead(item.id);
-          if (item.reminder) {
-            setSelectedItem(item.reminder);
-            setPopupVisible(true);
-          }
-        }}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.iconWrapper, { backgroundColor: iconColor + '15' }]}>
-          <MaterialIcons name={iconName} size={24} color={iconColor} />
-        </View>
-        <View style={styles.info}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: iconColor }]}>{item.title}</Text>
-            <Text style={styles.time}>{item.displayTime}</Text>
+      <View style={styles.cardWrapper}>
+        <TouchableOpacity 
+          style={[styles.notifCard, item.is_read === 0 && styles.unreadCard]}
+          onPress={async () => {
+            if (item.is_read === 0) markAsRead(item.id);
+            if (item.type === 'invitation') {
+              const invId = item.id.replace('inv-', '');
+              try {
+                setLoading(true);
+                const { data, error } = await supabase
+                  .from('invitations')
+                  .select('*')
+                  .eq('id', invId)
+                  .maybeSingle();
+                if (error) throw error;
+                if (!data) {
+                  Alert.alert('Thông báo', 'Lời mời này đã bị hủy hoặc không còn tồn tại.');
+                  return;
+                }
+                setSelectedItem({ ...data.reminder_data, invitation_id: invId });
+                setCurrentSenderEmail(data.sender_email);
+                setIsInvitationMode(true);
+                setPopupVisible(true);
+              } catch (err) {
+                console.error(err);
+                Alert.alert('Lỗi', 'Không thể tải thông tin lời mời.');
+              } finally {
+                setLoading(false);
+              }
+            } else if (item.reminder) {
+              setSelectedItem(item.reminder);
+              setCurrentSenderEmail(undefined);
+              setIsInvitationMode(false);
+              setPopupVisible(true);
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.iconWrapper, { backgroundColor: iconColor + '15' }]}>
+            <MaterialIcons name={iconName} size={24} color={iconColor} />
           </View>
-          {renderDescription(item.body)}
-        </View>
-      </TouchableOpacity>
+          <View style={styles.info}>
+            <View style={styles.titleRow}>
+              <Text style={[styles.title, { color: iconColor }]}>{item.title}</Text>
+              <Text style={styles.time}>{item.displayTime}</Text>
+            </View>
+            {renderDescription(item.body)}
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+          <MaterialIcons name="delete-outline" size={20} color={Colors.outline} />
+        </TouchableOpacity>
+      </View>
     );
   };
 
@@ -267,7 +352,17 @@ export const NotificationScreen = () => {
         onClose={() => setPopupVisible(false)}
         item={selectedItem}
         onEdit={handleEdit}
+        isInvitation={isInvitationMode}
+        invitationId={(selectedItem as any)?.invitation_id}
+        onAccept={handleAcceptInvitation}
+        onDecline={handleDeclineInvitation}
+        senderEmail={currentSenderEmail}
       />
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -351,6 +446,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: Colors.onSurface,
   },
+  cardWrapper: {
+    position: 'relative',
+  },
+  deleteButton: {
+    position: 'absolute',
+    right: 28,
+    bottom: 22,
+    padding: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
   filterBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -425,4 +536,11 @@ const styles = StyleSheet.create({
     color: Colors.onSurface,
     opacity: 0.8,
   },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999
+  }
 });

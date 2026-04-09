@@ -24,13 +24,14 @@ WebBrowser.maybeCompleteAuthSession();
 
 export const LoginScreen = () => {
   const [loading, setLoading] = useState(false);
-  const { setSession } = useAuthStore();
+  const { setSession, setInitialSync } = useAuthStore();
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
       const redirectUrl = AuthSession.makeRedirectUri({
         path: 'auth/callback',
       });
+      console.log('🔗 Generated Redirect URL:', redirectUrl);
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -47,23 +48,18 @@ export const LoginScreen = () => {
       if (error) throw error;
 
       if (data?.url) {
-        // Bộ lắng nghe dự phòng nếu trình duyệt không tự đóng
-        const linkingSubscription = Linking.addEventListener('url', async (event) => {
-          handleRedirect(event.url);
-          linkingSubscription.remove();
-        });
-
+        console.log('🌐 Opening Auth Session at:', data.url);
         const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
         
         if (result.type === 'success' && result.url) {
+          console.log('✅ Auth Session Success! Redirect URL received:', result.url);
           handleRedirect(result.url);
+        } else {
+          console.log('ℹ️ Auth Session Cancelled or Closed. Result:', result.type);
         }
-        
-        // Hủy lắng nghe sau khi hoàn tất
-        linkingSubscription.remove();
       }
     } catch (error: any) {
-      console.error('Login Error:', error);
+      console.error('❌ Login Error:', error);
       Alert.alert('Lỗi đăng nhập', error.message);
     } finally {
       setLoading(false);
@@ -72,32 +68,46 @@ export const LoginScreen = () => {
 
   const handleRedirect = async (url: string) => {
     try {
-      const urlParts = url.split(/[?#]/);
-      const allParams = urlParts.slice(1).join('&');
-      const params = new URLSearchParams(allParams);
+      // Xử lý URL để lấy params từ cả query (?) và fragment (#)
+      const urlObj = new URL(url.replace('#', '?'));
+      const params = urlObj.searchParams;
       
       const code = params.get('code');
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
 
+      console.log('📝 Parsed parameters:', { 
+        hasCode: !!code, 
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken 
+      });
+
       if (code) {
+        console.log('🔄 Exchanging code for session...');
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) throw error;
+        
+        console.log('🎉 Login Success with Code!');
+        setInitialSync(true);
         setSession(data.session);
-        // Sync ngay sau khi đăng nhập thành công
         syncService.performFullSync();
       } else if (accessToken && refreshToken) {
+        console.log('🔄 Setting session from tokens...');
         const { data, error } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
         if (error) throw error;
+        
+        console.log('🎉 Login Success with Tokens!');
+        setInitialSync(true);
         setSession(data.session);
-        // Sync ngay sau khi đăng nhập thành công
         syncService.performFullSync();
+      } else {
+        console.warn('⚠️ No valid authentication parameters found in redirect URL.');
       }
     } catch (err: any) {
-      console.error('Redirect Processing Error:', err);
+      console.error('❌ Redirect Processing Error:', err);
     }
   };
 
@@ -113,14 +123,11 @@ export const LoginScreen = () => {
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <LinearGradient
-              colors={[Colors.primary, '#1a73e8']}
-              style={styles.logoGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <MaterialCommunityIcons name="calendar-sync" size={48} color="#fff" />
-            </LinearGradient>
+              <Image 
+                source={require('../../assets/logoreminder.png')} 
+                style={{ width: 120, height: 120, borderRadius: Radius.xxl }} 
+                resizeMode="contain"
+              />
           </View>
           <Text style={styles.title}>Chào mừng quay trở lại</Text>
           <Text style={styles.subtitle}>
@@ -140,7 +147,7 @@ export const LoginScreen = () => {
             ) : (
               <>
                 <Image
-                  source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg' }}
+                  source={{ uri: 'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png' }}
                   style={styles.googleIcon}
                 />
                 <Text style={styles.googleButtonText}>Tiếp tục với Google</Text>
@@ -163,10 +170,10 @@ const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: Spacing[8], justifyContent: 'space-between', paddingVertical: Spacing[12] },
   header: { alignItems: 'center', marginTop: Spacing[10] },
   logoContainer: {
-    width: 100, height: 100, borderRadius: Radius.xxl,
-    marginBottom: Spacing[8], elevation: 8,
-    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3, shadowRadius: 20,
+    width: 150, height: 150, borderRadius: Radius.xxl,
+    marginBottom: Spacing[8],
+    backgroundColor: 'transparent',
+    alignItems: 'center', justifyContent: 'center',
   },
   logoGradient: { flex: 1, borderRadius: Radius.xxl, alignItems: 'center', justifyContent: 'center' },
   title: {

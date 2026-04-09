@@ -20,6 +20,7 @@ import { EditReminderPresetScreen } from '../screens/EditReminderPresetScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { WebLandingScreen } from '../screens/WebLandingScreen';
 import { WebLoginScreen } from '../screens/WebLoginScreen';
+import { SyncingScreen } from '../screens/SyncingScreen';
 import { Platform } from 'react-native';
 import { useAuthStore } from '../store/useAuthStore';
 import { supabase } from '../services/supabase';
@@ -111,7 +112,7 @@ const MainTabs = () => (
 );
 
 export const AppNavigator = () => {
-  const { isAuthenticated, isFirstTime, setSession } = useAuthStore();
+  const { isAuthenticated, isFirstTime, isSyncing, isInitialSync, setSession } = useAuthStore();
 
   useEffect(() => {
     // Khôi phục session khi app khởi động
@@ -153,6 +154,8 @@ export const AppNavigator = () => {
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : !isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
+        ) : isInitialSync ? (
+          <Stack.Screen name="Syncing" component={SyncingScreen} />
         ) : (
           <Stack.Screen name="Main" component={MainTabs} />
         )

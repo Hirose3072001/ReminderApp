@@ -53,12 +53,13 @@ export const upsertReminder = (reminder: Reminder) => {
   
   if (existing) {
     db.runSync(
-      `UPDATE reminders SET user_id=?, type=?, title=?, description=?, priority=?, dueDate=?, endTime=?, completed=?, reminderTime=?, reminderRepeat=?, synced=0, updatedAt=?
+      `UPDATE reminders SET user_id=?, type=?, title=?, description=?, priority=?, dueDate=?, endTime=?, completed=?, reminderTime=?, reminderRepeat=?, notificationId=?, reminderRules=?, synced=0, updatedAt=?
        WHERE id=?`,
       [
         reminder.user_id || null, reminder.type, reminder.title, reminder.description, reminder.priority,
         reminder.dueDate, reminder.endTime || null, reminder.completed,
         reminder.reminderTime || null, reminder.reminderRepeat || null,
+        reminder.notificationId || null, reminder.reminderRules || null,
         new Date().toISOString(), reminder.id
       ]
     );
@@ -163,7 +164,7 @@ export const getUnsyncedNotifications = (userId: string): Notification[] => {
   return db.getAllSync('SELECT * FROM notifications WHERE user_id = ? AND synced = 0', [userId]) as Notification[];
 };
 
-export const deleteNotification = (id: string) => {
+export const softDeleteNotification = (id: string) => {
   const db = getDB();
-  db.runSync('DELETE FROM notifications WHERE id = ?', [id]);
+  db.runSync('UPDATE notifications SET isDeleted = 1, synced = 0 WHERE id = ?', [id]);
 };

@@ -28,6 +28,9 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { WebDateTimePicker, PickerMode } from '../components/ui/WebDateTimePicker';
 import { WebDateSegmentInput } from '../components/ui/WebDateSegmentInput';
+import { invitationService } from '../services/invitationService';
+import { useAuthStore } from '../store/useAuthStore';
+import { supabase } from '../services/supabase';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AddTask'>;
@@ -40,6 +43,7 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
   const { type, editItem } = route.params || { type: 'task' };
   const isEvent = type === 'event';
   const isEdit = !!editItem;
+  const { user } = useAuthStore();
 
   const getInitialValues = () => {
     const now = new Date();
@@ -73,7 +77,14 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
         }
       }
     } else {
-      const extrasMatch = desc.match(/--- Thông tin thêm ---\n([\s\S]*)/);
+      // Event: Extract [Người tham gia] first
+      const pParts = mainDesc.split('[Người tham gia]:');
+      if (pParts.length > 1) {
+        mainDesc = pParts[0].trim();
+        parts = pParts[1].split(',').map(s => s.trim()).filter(Boolean);
+      }
+
+      const extrasMatch = mainDesc.match(/--- Thông tin thêm ---\n([\s\S]*)/);
       if (extrasMatch) {
         const lines = extrasMatch[1].split('\n');
         lines.forEach(l => {
@@ -96,6 +107,7 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
   const [priority, setPriority] = useState(initialData.priority);
   const [participants, setParticipants] = useState<string[]>(initialData.participants);
   const [participantInput, setParticipantInput] = useState('');
+  const [invitationStatuses, setInvitationStatuses] = useState<Record<string, string>>({});
   const [formatType, setFormatType] = useState(initialData.formatType);
   const [location, setLocation] = useState(initialData.location);
   const [link, setLink] = useState(initialData.link);
@@ -147,6 +159,23 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       timeSlots: [] 
     }]);
   };
+
+  useEffect(() => {
+    if (isEdit && editItem?.id) {
+      const fetchStatus = async () => {
+        const { data } = await supabase
+          .from('invitations')
+          .select('receiver_email, status')
+          .eq('reminder_id', editItem.id);
+        if (data) {
+          const statuses: Record<string, string> = {};
+          data.forEach((d: any) => { statuses[d.receiver_email] = d.status; });
+          setInvitationStatuses(statuses);
+        }
+      };
+      fetchStatus();
+    }
+  }, [isEdit, editItem]);
   const updateReminderRule = (id: string, field: keyof LocalReminderRule, value: any) => {
     setLocalReminderRules(localReminderRules.map(r => r.id === id ? { ...r, [field]: value } : r));
   };
@@ -196,11 +225,9 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       const r = localReminderRules.find(x => x.id === activeTimeSlotReminderId);
       
       if (r) {
-        // If we were selecting hour, we don't add the slot yet, just update the temp value for visual feedback or just wait for minute
         if (webPickerMode === 'hour') {
           setWebPickerMode('minute');
         } else {
-          // Finished choosing both or specifically minute
           if (!r.timeSlots.includes(tStr)) {
             updateReminderRule(r.id, 'timeSlots', [...r.timeSlots, tStr]);
           }
@@ -259,15 +286,29 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       const currentParticipants = [...participants];
       if (participantInput.trim()) currentParticipants.push(participantInput.trim());
 
+      let allParticipants = Array.from(new Set(currentParticipants.map(p => p.trim().toLowerCase())));
+      
+      const originalCreator = isEdit && initialData.participants.length > 0
+        ? initialData.participants[0].trim().toLowerCase()
+        : user?.email?.trim().toLowerCase();
+
+      if (originalCreator) {
+        // Remove creator from list if they exist (to re-position at start)
+        allParticipants = allParticipants.filter(p => p !== originalCreator);
+        // Put original creator at index 0
+        allParticipants.unshift(originalCreator);
+      }
+
       if (!isEvent) {
         if (currentSubtasks.length > 0) finalDescription += `\n\n[Nhiệm vụ cần làm]\n` + currentSubtasks.map(t => `- [ ] ${t}`).join('\n');
-        if (currentParticipants.length > 0) finalDescription += `\n\n[Người tham gia]: ` + currentParticipants.join(', ');
+        if (allParticipants.length > 0) finalDescription += `\n\n[Người tham gia]: ` + allParticipants.join(', ');
       } else {
         const extras = [];
         if (formatType) extras.push(`Hình thức: ${formatType}`);
         if (location) extras.push(`Địa điểm: ${location}`);
         if (link) extras.push(`Link: ${link}`);
         if (extras.length > 0) finalDescription += `\n\n--- Thông tin thêm ---\n${extras.join('\n')}`;
+        if (allParticipants.length > 0) finalDescription += `\n\n[Người tham gia]: ` + allParticipants.join(', ');
       }
 
       const pVal = priority === 'Cao' || priority === 'Khẩn cấp' || priority === 'Nghiêm trọng' ? 'high' : priority === 'Thấp' ? 'low' : 'medium';
@@ -282,9 +323,6 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       );
 
       let triggerTimes = allGeneratedTriggers.map(t => ({ date: t.date, body: t.body }));
-
-      // Sort all triggers to find the most relevant one for the DB feed
-      // We pick the first one that is either in the future OR within the last 24h (to keep it in history)
       const now = Date.now();
       const relevantTriggers = [...triggerTimes]
         .filter(t => t.date.getTime() > now - 86400000)
@@ -293,7 +331,6 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
       const firstReminderTime = relevantTriggers.length > 0 ? relevantTriggers[0].date : (triggerTimes.length > 0 ? triggerTimes[0].date : null);
       const reminderTimeStr = firstReminderTime ? format(firstReminderTime, "yyyy-MM-dd'T'HH:mm:ss") : null;
 
-      // Filter for future-only push notifications
       const futureTriggers = triggerTimes.filter(t => t.date.getTime() > now).sort((a, b) => a.date.getTime() - b.date.getTime());
       triggerTimes = futureTriggers;
 
@@ -324,8 +361,28 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
         });
       }
 
+      if (currentParticipants.length > 0) {
+        const reminderData = {
+          id: taskId,
+          type: isEvent ? 'event' : 'task',
+          title: title.trim(),
+          description: finalDescription,
+          priority: pVal,
+          dueDate: startTime.toISOString(),
+          endTime: endTime.toISOString(),
+          reminderTime: reminderTimeStr,
+          reminderRules: hasReminder ? JSON.stringify(localReminderRules) : null,
+        };
+        // Chỉ gửi lời mời cho những người khác (không phải chính mình)
+        const otherParticipants = currentParticipants.filter(p => p !== user?.email);
+        if (otherParticipants.length > 0) {
+          await invitationService.sendInvitations(taskId, reminderData, otherParticipants);
+        }
+      }
+
       navigation.goBack();
     } catch (e) {
+      console.error(e);
       Alert.alert('Lỗi', 'Không thể lưu. Thử lại sau.');
     } finally {
       setLoading(false);
@@ -486,34 +543,51 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
               )}
               {isTimeError && <Text style={styles.errorText}>Thời gian kết thúc không thể trước thời gian bắt đầu</Text>}
             </View>
-            {!isEvent && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Người tham gia</Text>
-                {participants.length > 0 ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                    {participants.map((p, idx) => (
-                      <View key={idx} style={styles.chipItemSmall}>
-                        <Text style={styles.chipTextSmall}>{p}</Text>
-                        <TouchableOpacity onPress={() => setParticipants(participants.filter((_, i) => i !== idx))}>
-                          <MaterialIcons name="close" size={14} color={Colors.onSurfaceVariant} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                <TextInput
-                  style={styles.input}
-                  value={participantInput}
-                  onChangeText={setParticipantInput}
-                  placeholder="Thêm email người tham gia..."
-                  placeholderTextColor={Colors.outline}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  onBlur={() => { if (participantInput.trim()) { setParticipants(prev => [...prev, participantInput.trim()]); setParticipantInput(''); } }}
-                  onSubmitEditing={() => { if (participantInput.trim()) { setParticipants(prev => [...prev, participantInput.trim()]); setParticipantInput(''); } }}
-                />
-              </View>
-            )}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Người tham gia</Text>
+              {participants.length > 0 || user?.email ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {user?.email && (
+                    <View style={[styles.chipItemSmall, { backgroundColor: Colors.primaryContainer, borderColor: Colors.primaryContainer }]}>
+                      <Text style={[styles.chipTextSmall, { color: Colors.onPrimaryContainer, fontWeight: 'bold' }]}>{user.email} (Người tạo)</Text>
+                    </View>
+                  )}
+                  {participants
+                    .filter(p => p.trim().toLowerCase() !== (isEdit && initialData.participants.length > 0 ? initialData.participants[0].trim().toLowerCase() : user?.email?.trim().toLowerCase()))
+                    .map((p, idx) => {
+                      let statusLabel = 'Đang mời';
+                      let chipColor = {};
+                      if (invitationStatuses[p] === 'accepted') {
+                        statusLabel = 'Đã thêm';
+                        chipColor = { backgroundColor: Colors.surfaceVariant }; 
+                      } else if (invitationStatuses[p] === 'declined') {
+                        statusLabel = 'Từ chối';
+                        chipColor = { backgroundColor: '#ffebee' }; // Light red
+                      }
+                      
+                      return (
+                        <View key={idx} style={[styles.chipItemSmall, chipColor]}>
+                          <Text style={styles.chipTextSmall}>{p} ({statusLabel})</Text>
+                          <TouchableOpacity onPress={() => setParticipants(participants.filter((item) => item !== p))}>
+                            <MaterialIcons name="close" size={14} color={Colors.onSurfaceVariant} />
+                          </TouchableOpacity>
+                        </View>
+                      )
+                    })}
+                </View>
+              ) : null}
+              <TextInput
+                style={styles.input}
+                value={participantInput}
+                onChangeText={setParticipantInput}
+                placeholder="Thêm email người tham gia..."
+                placeholderTextColor={Colors.outline}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                onBlur={() => { if (participantInput.trim()) { setParticipants(prev => [...prev, participantInput.trim()]); setParticipantInput(''); } }}
+                onSubmitEditing={() => { if (participantInput.trim()) { setParticipants(prev => [...prev, participantInput.trim()]); setParticipantInput(''); } }}
+              />
+            </View>
           </View>
 
           <View style={styles.section}>
@@ -639,8 +713,6 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
               </>
             )}
           </View>
-
-
 
           <View style={{ height: 40 }} />
           </View>
@@ -781,16 +853,16 @@ const styles = StyleSheet.create({
   bottomBarInner: { paddingHorizontal: 24 },
   saveBtn: { backgroundColor: Colors.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
   saveBtnText: { fontFamily: FontFamily.interBold, fontSize: FontSize.bodyLg, color: '#ffffff' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  modalContentPicker: { backgroundColor: '#fff', borderRadius: 16, paddingBottom: 16, width: '100%', overflow: 'hidden' },
-  pickerHeaderiOS: { flexDirection: 'row', justifyContent: 'flex-end', backgroundColor: '#f0f0f0', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
-  pickerDoneText: { fontFamily: FontFamily.interBold, color: Colors.primary, fontSize: FontSize.bodyLg },
-  cardBox: { padding: 16, backgroundColor: '#ffffff', borderRadius: 16, borderWidth: 2, borderColor: 'rgba(193, 198, 214, 0.15)', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.02, elevation: 1 },
-  cardBoxTitle: { fontFamily: FontFamily.interBold, fontSize: FontSize.labelSm, color: Colors.onSurface, textTransform: 'uppercase', marginBottom: 12, letterSpacing: 0.5 },
-  chipItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.surfaceContainerLow || '#f3f3f4', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8 },
-  chipItemText: { fontFamily: FontFamily.interMedium, fontSize: FontSize.bodyMd, color: Colors.onSurface, flex: 1 },
-  chipItemSmall: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceVariant || '#e2e2e2', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, gap: 4 },
-  chipTextSmall: { fontFamily: FontFamily.interMedium, fontSize: FontSize.labelSm, color: Colors.onSurfaceVariant },
-  ghostBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(26, 115, 232, 0.2)', backgroundColor: 'transparent' },
-  ghostBtnText: { fontFamily: FontFamily.interSemiBold, fontSize: FontSize.labelMd, color: Colors.primary, marginLeft: 8 },
+  ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  ghostBtnText: { fontFamily: FontFamily.interSemiBold, fontSize: FontSize.labelMd, color: Colors.primary },
+  chipItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surfaceContainerLow || '#f3f3f4', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 100 },
+  chipItemText: { fontFamily: FontFamily.interMedium, fontSize: FontSize.bodyMd, color: Colors.onSurface },
+  chipItemSmall: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.surfaceContainerLow || '#f3f3f4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  chipTextSmall: { fontFamily: FontFamily.interMedium, fontSize: FontSize.bodySm, color: Colors.onSurface },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContentPicker: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 24 },
+  pickerHeaderiOS: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f3f3f4' },
+  pickerDoneText: { color: Colors.primary, fontFamily: FontFamily.interBold, fontSize: 16 },
+  cardBox: { backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#f3f3f4' },
+  cardBoxTitle: { fontFamily: FontFamily.interSemiBold, fontSize: 12, color: Colors.outline, marginBottom: 12 },
 });

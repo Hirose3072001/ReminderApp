@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from 'react-native';
 import { Colors, FontFamily, FontSize } from '../theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
@@ -34,14 +34,22 @@ export const WebLoginScreen = () => {
     <View style={styles.container}>
       <View style={styles.card}>
         <View style={styles.header}>
-            <View style={styles.logoPlaceholder}>
-                <MaterialIcons name="fact-check" size={32} color={Colors.primary} />
+            <View style={styles.logoContainer}>
+                <Image 
+                    source={require('../../assets/logoreminder.png')} 
+                    style={{ width: 120, height: 120, borderRadius: 24 }} 
+                    resizeMode="contain"
+                />
             </View>
             <Text style={styles.title}>Chào mừng trở lại</Text>
             <Text style={styles.subtitle}>Đăng nhập để tiếp tục quản lý công việc và lịch trình của bạn trên mọi thiết bị.</Text>
         </View>
 
         <TouchableOpacity style={styles.googleButton} onPress={handleLogin}>
+          <Image
+            source={{ uri: 'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png' }}
+            style={{ width: 24, height: 24, marginRight: 12 }}
+          />
           <Text style={styles.googleButtonText}>Đăng nhập với Google</Text>
         </TouchableOpacity>
       </View>
@@ -73,14 +81,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 48,
   },
-  logoPlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    backgroundColor: Colors.primaryFixed,
+  logoContainer: {
+    width: 160,
+    height: 160,
+    borderRadius: 32,
+    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 4,
   },
   title: {
     fontFamily: FontFamily.manropeBold,
@@ -101,6 +114,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
   },

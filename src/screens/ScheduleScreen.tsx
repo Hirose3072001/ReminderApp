@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
     flex: 0.4, // 4 phần
     paddingLeft: 10,
   },
-  agendaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 12, marginTop: 8, marginBottom: 4 },
+  agendaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 12, marginTop: 12, marginBottom: 16 },
   agendaTitle: { 
     fontFamily: FontFamily.manropeExtraBold, 
     fontSize: Platform.OS === 'web' ? FontSize.titleSm : 20, 

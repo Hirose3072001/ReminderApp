@@ -123,9 +123,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   deleteNotification: (id: string) => {
-    // Chuyển sang Xóa mềm (Soft Delete) để Sync Service có thể xóa trên Supabase
-    const db = require('../database/index').getDB();
-    db.runSync('UPDATE notifications SET isDeleted = 1, synced = 0 WHERE id = ?', [id]);
+    Queries.softDeleteNotification(id);
     get().loadNotifications();
     getSyncService().markDirty();
   },
@@ -148,12 +146,19 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   }
 }));
 
-// Đăng ký theo dõi User để load data
+let lastSyncUserId: string | null = null;
 useAuthStore.subscribe((state) => {
-  if (state.isAuthenticated && state.user) {
-    useNotificationStore.getState().loadNotifications();
+  const currentUserId = state.user?.id;
+  if (state.isAuthenticated && currentUserId) {
+    if (currentUserId !== lastSyncUserId) {
+      lastSyncUserId = currentUserId;
+      useNotificationStore.getState().loadNotifications();
+    }
   } else {
-    useNotificationStore.setState({ notifications: [], unreadCount: 0 });
+    if (lastSyncUserId !== null) {
+      lastSyncUserId = null;
+      useNotificationStore.setState({ notifications: [], unreadCount: 0 });
+    }
   }
 });
 

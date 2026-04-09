@@ -60,9 +60,11 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
 
     try {
       Queries.insertReminder(newReminder);
-      await handleScheduling(newReminder);
       get().loadReminders();
       syncService.markDirty(); // Đánh dấu dirty, sẽ tự push sau 5 phút
+      
+      // Hẹn lịch thông báo ở background để không block UI lưu
+      handleScheduling(newReminder).catch(e => console.error('❌ Background Scheduling Error:', e));
     } catch (e) {
       console.error('❌ Error adding reminder:', e);
     }
@@ -94,18 +96,18 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
   editReminder: async (id, data) => {
     try {
       Queries.updateReminder(id, data);
+      get().loadReminders();
+      syncService.markDirty();
 
       const user = useAuthStore.getState().user;
       if (user) {
         const all = Queries.getAllReminders(user.id);
         const updated = all.find(r => r.id === id);
         if (updated) {
-          await handleScheduling(updated);
+          // Hẹn lịch lại ở background
+          handleScheduling(updated).catch(e => console.error('❌ Background Rescheduling Error:', e));
         }
       }
-
-      get().loadReminders();
-      syncService.markDirty();
     } catch (e) {
       console.error('❌ Error editing reminder:', e);
     }
@@ -125,12 +127,20 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
 }));
 
 // Tự động load/clear khi user thay đổi
+let lastSyncUserId: string | null = null;
 useAuthStore.subscribe((state) => {
-  if (state.isAuthenticated && state.user) {
-    useReminderStore.getState().loadReminders();
-    syncService.performFullSync(state.user.id, true).catch(console.error); // Luôn kéo data mới khi login (ignore throttle)
+  const currentUserId = state.user?.id;
+  if (state.isAuthenticated && currentUserId) {
+    if (currentUserId !== lastSyncUserId) {
+      lastSyncUserId = currentUserId;
+      useReminderStore.getState().loadReminders();
+      syncService.performFullSync(currentUserId, true).catch(console.error); // Luôn kéo data mới khi login (ignore throttle)
+    }
   } else {
-    useReminderStore.setState({ reminders: [] });
+    if (lastSyncUserId !== null) {
+      lastSyncUserId = null;
+      useReminderStore.setState({ reminders: [] });
+    }
   }
 });
 

@@ -19,6 +19,7 @@ export const TaskManagementScreen = () => {
   const [selectedItem, setSelectedItem] = useState<Reminder | null>(null);
   const [filterVisible, setFilterVisible] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | 'incomplete' | 'completed' | 'overdue'>('incomplete');
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadReminders();
@@ -101,17 +102,36 @@ export const TaskManagementScreen = () => {
     return format(d, 'EEEE, dd/MM/yyyy', { locale: vi });
   };
 
-  const renderSectionHeader = ({ section: { title } }: any) => (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionTitleRow}>
-        <View style={styles.sectionBar} />
-        <Text style={styles.sectionTitle}>{getStatusLabel(title)}</Text>
-        <MaterialIcons name="keyboard-arrow-down" size={24} color={Colors.outline} />
-      </View>
-    </View>
-  );
+  const toggleSection = (title: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [title]: !prev[title],
+    }));
+  };
 
-  const renderItem = ({ item }: { item: Reminder }) => {
+  const renderSectionHeader = ({ section: { title } }: any) => {
+    const isCollapsed = !!collapsedSections[title];
+    return (
+      <TouchableOpacity 
+        style={styles.sectionHeader} 
+        onPress={() => toggleSection(title)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.sectionTitleRow}>
+          <View style={styles.sectionBar} />
+          <Text style={styles.sectionTitle}>{getStatusLabel(title)}</Text>
+          <MaterialIcons 
+            name={isCollapsed ? "keyboard-arrow-right" : "keyboard-arrow-down"} 
+            size={24} 
+            color={Colors.outline} 
+          />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderItem = ({ item, section }: { item: Reminder, section: any }) => {
+    if (collapsedSections[section.title]) return null;
     const isCompleted = item.completed === 1;
     const isEvent = item.type === 'event';
     const accentColor = getPriorityColor(item.priority, isEvent);
@@ -134,13 +154,20 @@ export const TaskManagementScreen = () => {
         activeOpacity={0.7}
         onPress={() => setSelectedItem(item)}
       >
-        <View style={styles.cardMain}>
+        <View style={styles.timeColumn}>
+          <MaterialIcons name="fact-check" size={20} color={accentColor} style={{ marginBottom: 4 }} />
+          <Text style={styles.timeText}>
+            Hạn: {deadlineTimeStr}
+          </Text>
+        </View>
+
+        <View style={styles.infoColumn}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Text style={[styles.taskTitle, { color: accentColor }, isCompleted && styles.textCompleted]} numberOfLines={1}>
-              Hạn: {deadlineTimeStr} {item.title}
+              {item.title}
             </Text>
             {(() => {
-              const deadlineStr = (item.type === 'task' && item.endTime) ? item.endTime : item.dueDate;
+              const deadlineStr = item.endTime || item.dueDate;
               const isOverdue = !isCompleted && deadlineStr && new Date(deadlineStr) < new Date();
               let sInfo = { label: 'Đang thực hiện', color: '#1A73E8', bgColor: '#E0F2FE' };
               if (isCompleted) sInfo = { label: 'Đã hoàn thành', color: '#2E7D32', bgColor: '#DCFCE7' };
@@ -159,7 +186,7 @@ export const TaskManagementScreen = () => {
                 Công việc
              </Text>
           </View>
-
+          
           <Text style={{ fontFamily: FontFamily.interRegular, fontSize: 11, color: accentColor, marginTop: 4 }} numberOfLines={2}>
             <Text style={{ fontFamily: FontFamily.interBold }}>Mô tả: </Text>{displayDesc}
           </Text>
@@ -168,6 +195,8 @@ export const TaskManagementScreen = () => {
             Nhiệm vụ cần làm({stats.completed}/{stats.total})
           </Text>
         </View>
+
+        <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
       </TouchableOpacity>
     );
   };
@@ -328,32 +357,29 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   taskCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 16,
-    padding: 16,
-    borderLeftWidth: 6,
+    borderRadius: 12,
+    marginBottom: 6,
+    padding: 8,
+    paddingVertical: 12,
+    borderLeftWidth: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
+    shadowOpacity: 0.03,
+    shadowRadius: 16,
     elevation: 2,
   },
   taskCardCompleted: {
     opacity: 0.6,
   },
-  cardMain: {
-    flex: 1,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
+  timeColumn: { width: 60, alignItems: 'center', justifyContent: 'center' },
+  timeText: { fontFamily: FontFamily.interBold, fontSize: 10, color: Colors.outlineVariant, textAlign: 'center' },
+  infoColumn: { flex: 1, paddingLeft: 8 },
   taskTitle: {
     fontFamily: FontFamily.interBold,
-    fontSize: 16,
+    fontSize: FontSize.bodyLg,
     color: '#000',
     flex: 1,
   },

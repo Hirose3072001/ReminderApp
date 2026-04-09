@@ -5,7 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-const LOGO = require('../../assets/icon.png');
+const LOGO = require('../../assets/logoreminder_main.png');
 
 export const WebLandingScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();

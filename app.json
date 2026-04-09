@@ -5,9 +5,9 @@
     "scheme": "remind-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logoreminder_main.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -23,9 +23,8 @@
     "android": {
       "package": "com.remindapp.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "backgroundColor": "#F9F9F9"
+        "foregroundImage": "./assets/logoreminder_foreground.png",
+        "backgroundColor": "#E3F2FD"
       },
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
@@ -41,7 +40,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/logoreminder_foreground.png",
           "color": "#1A73E8",
           "defaultChannel": "reminders",
           "sounds": []
@@ -51,6 +50,11 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "expo-web-browser"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "539e65f2-0e38-4cae-bfeb-963833635167"
+      }
+    }
   }
 }

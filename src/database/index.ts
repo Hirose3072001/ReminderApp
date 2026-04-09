@@ -1,10 +1,15 @@
 import * as SQLite from 'expo-sqlite';
 
+let dbInstance: SQLite.SQLiteDatabase | null = null;
+
 /**
- * Mở và khởi tạo Database Sync
+ * Mở và khởi tạo Database Sync (Singleton)
  */
 export const getDB = () => {
-  return SQLite.openDatabaseSync('remindme.db');
+  if (!dbInstance) {
+    dbInstance = SQLite.openDatabaseSync('remindme.db');
+  }
+  return dbInstance;
 };
 
 /**
@@ -83,7 +88,7 @@ export const initDB = () => {
   try {
     const notifInfo = db.getAllSync("PRAGMA table_info(notifications)");
     const cols = (notifInfo as any[]).map(c => c.name);
-    console.log('🔍 Current notification columns:', cols.join(', '));
+    // if (__DEV__) console.log('🔍 Current notification columns:', cols.join(', '));
 
     let needsUpdate = false;
     const requiredCols = ['synced', 'is_read', 'user_id', 'createdAt', 'reminder_id', 'isDeleted'];
@@ -127,5 +132,5 @@ export const initDB = () => {
     console.error('❌ Error updating notifications schema:', e.message);
   }
 
-  console.log('✅ SQLite Database Initialized & Checked!');
+  // if (__DEV__) console.log('✅ SQLite Database Initialized & Checked!');
 };

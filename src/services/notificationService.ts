@@ -66,7 +66,14 @@ export const scheduleNotification = async (
     const hasPermission = await requestNotificationPermission();
     if (!hasPermission) return null;
 
-    // Caller is responsible for cleaning up existing notifications if needed using cancelTaskNotifications.
+    // Kiểm tra cài đặt của người dùng
+    const { useAuthStore } = require('../store/useAuthStore');
+    const pushEnabled = useAuthStore.getState().profile?.push_notifications ?? true;
+    
+    if (!pushEnabled) {
+      // console.log('🔕 Push notifications are disabled in settings, skipping system alert');
+      return null;
+    }
     
     let trigger: Notifications.NotificationTriggerInput;
 

@@ -13,6 +13,8 @@ import * as AuthSession from 'expo-auth-session';
 import * as Linking from 'expo-linking';
 import { supabase } from '../services/supabase';
 import { syncService } from '../services/syncService';
+import { cancelAllNotifications } from '../services/notificationService';
+import { rescheduleAllReminders } from '../services/schedulingService';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -82,16 +84,25 @@ export const SettingsScreen = () => {
   }, [profile?.push_notifications]);
 
   const handleTogglePush = async (value: boolean) => {
-    // 1. Cập nhật UI ngay lập tức (Optimistic Update)
+    // 1. Cập nhật UI và Store local ngay lập tức (Dirty flag để sync sau)
     setPushEnabled(value);
+    useAuthStore.getState().updateProfileLocally({ push_notifications: value });
     
-    // 2. Gọi API ngầm định
-    const result = await updateProfile({ push_notifications: value });
-    
-    // 3. Nếu lỗi thì hoàn tác và thông báo
-    if (!result.success) {
-      setPushEnabled(!value);
-      Alert.alert('Lỗi', 'Không thể cập nhật thiết lập thông báo vào lúc này.');
+    // 2. Thực hiện hiệu ứng ngay lập tức trên hệ thống thông báo điện thoại
+    try {
+      if (value === false) {
+        // Nếu tắt: Hủy toàn bộ các thông báo hệ thống đang chờ nổ
+        await cancelAllNotifications();
+        console.log('🚫 All scheduled system notifications cancelled');
+      } else {
+        // Nếu bật: Đặt lịch lại cho tất cả các nhắc nhở
+        if (user?.id) {
+          await rescheduleAllReminders(user.id);
+          console.log('🔔 All reminders rescheduled for system alerts');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to update system notifications:', err);
     }
   };
 

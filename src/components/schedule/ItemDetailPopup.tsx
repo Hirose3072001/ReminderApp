@@ -1,16 +1,23 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Alert, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, FontFamily, FontSize } from '../../theme';
 import { Reminder } from '../../database/queries';
 import { useReminderStore } from '../../store/useReminderStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { supabase } from '../../services/supabase';
 
 type Props = {
   item: Reminder | null;
   visible: boolean;
   onClose: () => void;
   onEdit?: (item: Reminder) => void;
+  isInvitation?: boolean;
+  invitationId?: string;
+  onAccept?: (invId: string, item: Reminder) => void;
+  onDecline?: (invId: string) => void;
+  senderEmail?: string;
 };
 
 // Utils for parsing description
@@ -61,13 +68,20 @@ const buildTaskDescription = (mainDesc: string, subtasks: { text: string, comple
 };
 
 const parseEventDescription = (desc: string) => {
-  if (!desc) return { mainDesc: '', formatType: '', location: '', link: '' };
+  if (!desc) return { mainDesc: '', formatType: '', location: '', link: '', participants: [] };
   let mainDesc = desc;
   let formatType = '';
   let location = '';
   let link = '';
+  let participants: string[] = [];
 
-  const extrasMatch = desc.match(/---\s*Thông tin thêm\s*---\n([\s\S]*)/i);
+  const pParts = desc.split('[Người tham gia]:');
+  if (pParts.length > 1) {
+    mainDesc = pParts[0].trim();
+    participants = pParts[1].split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  const extrasMatch = mainDesc.match(/---\s*Thông tin thêm\s*---\n([\s\S]*)/i);
   if (extrasMatch) {
     const lines = extrasMatch[1].split('\n');
     lines.forEach(l => {
@@ -78,14 +92,50 @@ const parseEventDescription = (desc: string) => {
     mainDesc = mainDesc.replace(extrasMatch[0], '');
   }
 
-  return { mainDesc: mainDesc.trim(), formatType, location, link };
+  return { mainDesc: mainDesc.trim(), formatType, location, link, participants };
 };
 
-export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, onClose, onEdit }) => {
+export const ItemDetailPopup: React.FC<Props> = ({ 
+  item: initialItem, 
+  visible, 
+  onClose, 
+  onEdit, 
+  isInvitation, 
+  invitationId, 
+  onAccept, 
+  onDecline,
+  senderEmail
+}) => {
   const { reminders, removeReminder, toggleStatus, updateDescription } = useReminderStore();
+  const { user } = useAuthStore();
+  const [invitationStatuses, setInvitationStatuses] = useState<Record<string, string>>({});
+  const [selectedParticipant, setSelectedParticipant] = useState<string | null>(null);
   
   // Real-time data bind
   const item = reminders.find(r => r.id === initialItem?.id) || initialItem;
+
+  useEffect(() => {
+    if (visible) {
+      setSelectedParticipant(null); // Reset when opening/changing
+    }
+  }, [visible, item?.id]);
+
+  useEffect(() => {
+    if (visible && item?.id) {
+      const fetchStatus = async () => {
+        const { data } = await supabase
+          .from('invitations')
+          .select('receiver_email, status')
+          .eq('reminder_id', item.id);
+        if (data) {
+          const statuses: Record<string, string> = {};
+          data.forEach((d: any) => { statuses[d.receiver_email] = d.status; });
+          setInvitationStatuses(statuses);
+        }
+      };
+      fetchStatus();
+    }
+  }, [visible, item?.id]);
 
   if (!item) return null;
 
@@ -100,7 +150,6 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
   const startTimeFull = `${timeStr} ${dateStr}`;
   const endTimeFull = `${endTimeStr} ${endDateStr}`.trim();
 
-  // Priority metadata
   const priorityColors: Record<string, string> = {
     urgent: '#C62828',
     high: '#C62828',
@@ -112,9 +161,15 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
     ((item.priority as string) === 'urgent' || item.priority === 'high') ? 'Cao' : 
     item.priority === 'low' ? 'Thấp' : 'Trung bình';
   
-  // Parse subtasks logic for early validation
-  const { mainDesc: tDesc, subtasks, participants } = parseTaskDescription(item.description);
-  const isAllSubtasksCompleted = subtasks.length === 0 || subtasks.every(st => st.completed);
+  // Common data for both Task and Event
+  const taskData = isTask ? parseTaskDescription(item.description) : null;
+  const eventData = !isTask ? parseEventDescription(item.description) : null;
+  
+  const tDesc = taskData?.mainDesc || '';
+  const subtasks = taskData?.subtasks || [];
+  const participants = isTask ? (taskData?.participants || []) : (eventData?.participants || []);
+  
+  const isAllSubtasksCompleted = isTask ? (subtasks.length === 0 || subtasks.every(st => st.completed)) : true;
 
   const handleDelete = () => {
     Alert.alert('Xóa mục này', 'Bạn có chắc chắn muốn xóa?', [
@@ -139,10 +194,76 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
     updateDescription(item.id, newDesc);
   };
 
+  const renderParticipants = () => {
+    // Identity logic: The sender is the creator.
+    // If senderEmail is provided (passed from invitations context), use it.
+    // Otherwise, assume the first email in the participants list is the creator.
+    const creatorFromList = participants.length > 0 ? participants[0] : null;
+    const creatorEmail = senderEmail || creatorFromList || user?.email;
+    
+    // Strict filter for invited list: exclude the identified creator (case-insensitive)
+    const invitedList = participants.filter(p => p.trim().toLowerCase() !== creatorEmail?.trim().toLowerCase());
+
+    if (!creatorEmail && invitedList.length === 0) return null;
+
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>NGƯỜI THAM GIA</Text>
+        <View style={styles.flexWrap}>
+          {creatorEmail && (
+            <TouchableOpacity 
+              activeOpacity={0.7}
+              onPress={() => {
+                const txt = `${creatorEmail} (Người tạo)`;
+                setSelectedParticipant(selectedParticipant === txt ? null : txt);
+              }}
+              style={[styles.participantChip, { backgroundColor: Colors.primaryContainer, borderColor: Colors.primary, borderWidth: 1 }]}
+            >
+              <Text style={[styles.participantText, { color: Colors.onPrimaryContainer, fontWeight: 'bold' }]}>
+                {creatorEmail.substring(0, 2).toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {invitedList
+            .filter(p => invitationStatuses[p] !== 'declined')
+            .map((p, idx) => {
+              const status = invitationStatuses[p];
+              const isAccepted = status === 'accepted';
+              const statusLabel = isAccepted ? 'Đã tham gia' : 'Đang mời';
+              
+              return (
+                <TouchableOpacity 
+                  key={`${p}-${idx}`} 
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    const txt = `${statusLabel}: ${p}`;
+                    setSelectedParticipant(selectedParticipant === txt ? null : txt);
+                  }}
+                  style={[
+                    styles.participantChip, 
+                    isAccepted ? { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#E8F5E9' } : { borderWidth: 0 }
+                  ]}
+                >
+                  <Text style={styles.participantText}>{p.substring(0, 2).toUpperCase()}</Text>
+                </TouchableOpacity>
+              );
+            })}
+        </View>
+        {selectedParticipant && (
+          <View style={styles.selectedParticipantInfo}>
+            <MaterialIcons name="info-outline" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+            <Text style={styles.selectedParticipantText}>
+              {selectedParticipant}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderTaskContent = () => {
     return (
       <View style={styles.contentWrap}>
-        {/* Description */}
         {tDesc ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>MÔ TẢ</Text>
@@ -150,7 +271,6 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
           </View>
         ) : null}
 
-        {/* Priority & Time */}
         <View style={styles.grid2}>
           <View style={styles.gridColumn}>
             <Text style={styles.sectionTitle}>MỨC ĐỘ ƯU TIÊN</Text>
@@ -174,7 +294,6 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
           </View>
         </View>
 
-        {/* Checklist */}
         {subtasks.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
@@ -200,19 +319,7 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
           </View>
         ) : null}
 
-        {/* Participants */}
-        {participants.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>NGƯỜI THAM GIA</Text>
-            <View style={styles.flexWrap}>
-              {participants.map((p, idx) => (
-                <View key={idx} style={styles.participantChip}>
-                  <Text style={styles.participantText}>{p.substring(0, 2).toUpperCase()}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
+        {renderParticipants()}
       </View>
     );
   };
@@ -222,7 +329,6 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
 
     return (
       <View style={styles.contentWrap}>
-        {/* Description */}
         {eDesc ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>MÔ TẢ</Text>
@@ -230,7 +336,6 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
           </View>
         ) : null}
 
-        {/* Priority & Time */}
         <View style={styles.grid2}>
           <View style={styles.gridColumn}>
             <Text style={styles.sectionTitle}>MỨC ĐỘ</Text>
@@ -254,7 +359,6 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
           </View>
         </View>
 
-        {/* Format & Link */}
         {(formatType || location || link) ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>THÔNG TIN THÊM</Text>
@@ -288,6 +392,7 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
             ) : null}
           </View>
         ) : null}
+        {renderParticipants()}
       </View>
     );
   };
@@ -298,7 +403,6 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.container}>
-          {/* Fixed Header */}
           <View style={styles.header}>
             <View style={{ flex: 1, marginRight: 16 }}>
               <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
@@ -315,36 +419,59 @@ export const ItemDetailPopup: React.FC<Props> = ({ item: initialItem, visible, o
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBlock}>
-            {/* Content Switch */}
             {isTask ? renderTaskContent() : renderEventContent()}
           </ScrollView>
 
-          {/* Footer Actions */}
           <View style={styles.footer}>
-             {isTask && (
-               <TouchableOpacity 
-                  style={[
-                    styles.btnPrimary, 
-                    item.completed ? { backgroundColor: Colors.tertiaryContainer || '#c55500' } : {},
-                    isBtnDisabled ? { opacity: 0.5 } : {}
-                  ]} 
-                  onPress={handleToggleEvent}
-                  activeOpacity={0.8}
-               >
-                 <Text style={styles.btnPrimaryText}>{item.completed ? 'Đánh dấu chưa xong' : 'Đã hoàn thành'}</Text>
-               </TouchableOpacity>
+             {isInvitation ? (
+               <>
+                 <TouchableOpacity 
+                    style={styles.btnPrimary} 
+                    onPress={() => {
+                      if (invitationId && item) onAccept?.(invitationId, item);
+                    }}
+                    activeOpacity={0.8}
+                 >
+                   <MaterialIcons name="calendar-today" size={20} color="#fff" style={{ marginRight: 8 }} />
+                   <Text style={styles.btnPrimaryText}>Thêm vào lịch</Text>
+                 </TouchableOpacity>
+                 <TouchableOpacity 
+                    style={styles.btnDanger} 
+                    onPress={() => {
+                      if (invitationId) onDecline?.(invitationId);
+                    }}
+                 >
+                   <Text style={styles.btnDangerText}>Từ chối</Text>
+                 </TouchableOpacity>
+               </>
+             ) : (
+               <>
+                 {isTask && (
+                   <TouchableOpacity 
+                      style={[
+                        styles.btnPrimary, 
+                        item.completed ? { backgroundColor: Colors.tertiaryContainer || '#c55500' } : {},
+                        isBtnDisabled ? { opacity: 0.5 } : {}
+                      ]} 
+                      onPress={handleToggleEvent}
+                      activeOpacity={0.8}
+                   >
+                     <Text style={styles.btnPrimaryText}>{item.completed ? 'Đánh dấu chưa xong' : 'Đã hoàn thành'}</Text>
+                   </TouchableOpacity>
+                 )}
+                 <TouchableOpacity 
+                    style={styles.btnSecondary} 
+                    onPress={() => {
+                      if (item) onEdit?.(item);
+                    }}
+                 >
+                    <Text style={styles.btnSecondaryText}>Sửa lịch</Text>
+                 </TouchableOpacity>
+                 <TouchableOpacity style={styles.btnDanger} onPress={handleDelete}>
+                    <Text style={styles.btnDangerText}>{isTask ? 'Xóa công việc' : 'Xóa sự kiện'}</Text>
+                 </TouchableOpacity>
+               </>
              )}
-             <TouchableOpacity 
-                style={styles.btnSecondary} 
-                onPress={() => {
-                  if (item) onEdit?.(item);
-                }}
-             >
-                <Text style={styles.btnSecondaryText}>Sửa lịch</Text>
-             </TouchableOpacity>
-             <TouchableOpacity style={styles.btnDanger} onPress={handleDelete}>
-                <Text style={styles.btnDangerText}>{isTask ? 'Xóa công việc' : 'Xóa sự kiện'}</Text>
-             </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -367,7 +494,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1, 
     shadowRadius: 15,
   },
-  scrollBlock: { paddingHorizontal: 24, paddingBottom: 24 },
+  scrollBlock: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 24 },
   header: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
@@ -406,4 +533,17 @@ const styles = StyleSheet.create({
   btnSecondaryText: { fontFamily: FontFamily.interBold, fontSize: FontSize.labelMd, color: Colors.primary },
   btnDanger: { width: '100%', height: 48, backgroundColor: 'rgba(186,26,26,0.05)', borderWidth: 1, borderColor: '#ba1a1a', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   btnDangerText: { fontFamily: FontFamily.interBold, fontSize: FontSize.labelMd, color: '#ba1a1a' },
+  selectedParticipantInfo: { 
+    marginTop: 12, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 8, 
+    backgroundColor: Colors.surfaceContainerLow || '#f3f3f4', 
+    borderRadius: 8 
+  },
+  selectedParticipantText: { 
+    fontSize: 12, 
+    color: Colors.onSurfaceVariant, 
+    fontFamily: FontFamily.interMedium 
+  },
 });
