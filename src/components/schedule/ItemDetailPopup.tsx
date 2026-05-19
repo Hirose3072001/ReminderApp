@@ -338,7 +338,7 @@ export const ItemDetailPopup: React.FC<Props> = ({
 
         <View style={styles.grid2}>
           <View style={styles.gridColumn}>
-            <Text style={styles.sectionTitle}>MỨC ĐỘ</Text>
+            <Text style={styles.sectionTitle}>MỨC ĐỘ ƯU TIÊN</Text>
             <View style={styles.flexRow}>
               <View style={[styles.dot, { backgroundColor: priorityColor }]} />
               <Text style={styles.valText}>{priorityText}</Text>
@@ -480,10 +480,10 @@ export const ItemDetailPopup: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 12 },
   container: { 
     width: Platform.OS === 'web' ? 500 : '100%', 
-    maxWidth: '95%',
+    maxWidth: '98%',
     backgroundColor: '#fff', 
     borderRadius: 24, 
     overflow: 'hidden', 

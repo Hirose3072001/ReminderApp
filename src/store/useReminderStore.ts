@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as Queries from '../database/queries';
+import { toLocalISOString } from '../utils/reminderUtils';
 import { Reminder } from '../database/queries';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
@@ -54,8 +55,8 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
       completed: 0,
       synced: 0,
       isDeleted: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: toLocalISOString(new Date()),
+      updatedAt: toLocalISOString(new Date()),
     };
 
     try {

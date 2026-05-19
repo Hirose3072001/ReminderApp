@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Reminder } from '../database/queries';
+import { toLocalISOString } from '../utils/reminderUtils';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from './useAuthStore';
 
@@ -66,8 +67,8 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
         ...reminderData,
         user_id: user.id,
         synced: 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: toLocalISOString(new Date()),
+        updatedAt: toLocalISOString(new Date())
       };
 
       console.log('Web adding reminder to Supabase:', newReminder.id);
@@ -89,7 +90,7 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
       const user = useAuthStore.getState().user;
       if (!user) return;
       
-      const updateData = { ...updates, updatedAt: new Date().toISOString(), synced: 1 };
+      const updateData = { ...updates, updatedAt: toLocalISOString(new Date()), synced: 1 };
       const { error } = await supabase
         .from('reminders')
         .update(updateData)
@@ -114,7 +115,7 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
       // Soft delete
       const { error } = await supabase
         .from('reminders')
-        .update({ isDeleted: 1, updatedAt: new Date().toISOString() })
+        .update({ isDeleted: 1, updatedAt: toLocalISOString(new Date()) })
         .eq('id', id)
         .eq('user_id', user.id);
 

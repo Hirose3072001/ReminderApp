@@ -7,7 +7,7 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
-import { Colors, FontFamily } from '../../theme';
+import { Colors, FontFamily, FontSize } from '../../theme';
 import { MaterialIcons } from '@expo/vector-icons';
 
 interface CustomPickerProps {
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    height: 56,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   },
   valueText: {
     fontFamily: FontFamily.interSemiBold,
-    fontSize: 15,
+    fontSize: FontSize.bodyLg,
     color: Colors.onSurface,
   },
   placeholderText: {

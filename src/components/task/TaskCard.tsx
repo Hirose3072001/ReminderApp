@@ -72,14 +72,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             {(task.endTime || task.dueDate) && (
               <View style={styles.metaChip}>
                 <Text style={styles.metaText}>
-                  📅 {format(task.endTime || task.dueDate!, 'dd MMM', { locale: vi })}
+                  📅 {format(new Date(task.endTime || task.dueDate!), 'dd MMM', { locale: vi })}
                 </Text>
               </View>
             )}
             {task.reminder && (
               <View style={styles.metaChip}>
                 <Text style={styles.metaText}>
-                  🔔 {format(task.reminder.time, 'HH:mm')}
+                  🔔 {format(new Date(task.reminder.time), 'HH:mm')}
                 </Text>
               </View>
             )}

@@ -47,16 +47,50 @@ export const ReminderSettingsScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const getRuleDescription = (rule: ReminderRule, index: number) => {
-    let typeText = '';
-    if (rule.type === 'before_start') typeText = 'Trước khi bắt đầu';
-    else if (rule.type === 'at_start') return `Nhắc lịch ${index + 1}: Tại thời điểm bắt đầu`;
-    else if (rule.type === 'before_end') typeText = 'Trước khi kết thúc';
+    let text = `• Nhắc ${index + 1}: `;
+    
+    // Support both old structure (for compatibility) and new structure
+    const timing = (rule as any).timing || (
+      (rule as any).type === 'before_start' ? 'Trước khi bắt đầu' :
+      (rule as any).type === 'at_start' ? 'Khi bắt đầu' :
+      (rule as any).type === 'before_end' ? 'Trước khi kết thúc' :
+      (rule as any).type === 'at_end' ? 'Khi kết thúc' : 'Trước khi bắt đầu'
+    );
+    const amount = (rule as any).amount || (rule as any).offsetValue || '';
+    const unit = (rule as any).unit || (
+      (rule as any).offsetUnit === 'minutes' ? 'Phút' :
+      (rule as any).offsetUnit === 'hours' ? 'Giờ' :
+      (rule as any).offsetUnit === 'days' ? 'Ngày' : ''
+    );
+    const freq = (rule as any).frequency || 'none';
 
-    const unitMap: any = { minutes: 'phút', hours: 'giờ', days: 'ngày' };
-    const offsetText = rule.offsetValue ? `${rule.offsetValue} ${unitMap[rule.offsetUnit || 'minutes']}` : '';
-    const timeText = rule.timeSlots.length > 0 ? `, Giờ nhắc: ${rule.timeSlots.join(', ')}` : '';
+    // Timing & Amount
+    if (timing === 'Khi bắt đầu' || timing === 'Khi kết thúc') {
+      text += timing;
+    } else {
+      text += `${timing} ${amount} ${unit}`;
+    }
 
-    return `Nhắc lịch ${index + 1}: ${typeText} ${offsetText}${timeText}`;
+    // Recurrence details
+    let recurrence = '';
+    if (freq === 'daily') {
+      recurrence = 'Hàng ngày';
+    } else if (freq === 'weekly' && rule.repeatWeekDays?.length > 0) {
+      recurrence = `Mỗi ${rule.repeatWeekDays.join(', ')}`;
+    } else if (freq === 'monthly' && rule.repeatMonthDays?.length > 0) {
+      recurrence = `Ngày ${rule.repeatMonthDays.join(', ')} hàng tháng`;
+    }
+
+    if (recurrence) {
+      text += ` (${recurrence})`;
+    }
+
+    // Specific times
+    if (rule.timeSlots?.length > 0) {
+      text += ` lúc ${rule.timeSlots.join(', ')}`;
+    }
+
+    return text;
   };
 
   return (
@@ -89,9 +123,12 @@ export const ReminderSettingsScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.rulesContainer}>
               {preset.rules.map((rule, idx) => (
                 <Text key={rule.id} style={styles.ruleText}>
-                  {getRuleDescription(rule, idx)}
+                  {getRuleDescription(rule as any, idx)}
                 </Text>
               ))}
+              {preset.rules.length === 0 && (
+                <Text style={styles.emptyCardText}>Chưa có quy tắc nào</Text>
+              )}
             </View>
           </TouchableOpacity>
         ))}
@@ -150,15 +187,24 @@ const styles = StyleSheet.create({
   },
   presetName: { 
     fontFamily: FontFamily.interBold, 
-    fontSize: 18, 
+    fontSize: 17, 
     color: Colors.onSurface 
   },
-  rulesContainer: { gap: 8 },
+  rulesContainer: { 
+    marginTop: 4,
+    gap: 6 
+  },
   ruleText: { 
-    fontFamily: FontFamily.interRegular, 
+    fontFamily: FontFamily.interMedium, 
     fontSize: 14, 
     color: Colors.onSurfaceVariant,
-    lineHeight: 22
+    lineHeight: 22,
+  },
+  emptyCardText: {
+    fontFamily: FontFamily.interRegular,
+    fontSize: 14,
+    color: Colors.outline,
+    fontStyle: 'italic',
   },
   addButton: {
     marginTop: 10,

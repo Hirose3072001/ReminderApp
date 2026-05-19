@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase';
-import { useAuthStore } from './useAuthStore.web';
+import { useAuthStore } from './useAuthStore';
+import { toLocalISOString } from '../utils/reminderUtils';
 import { Notification } from '../database/queries';
 
 interface NotificationState {
@@ -35,7 +36,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
-        .lte('timestamp', new Date().toISOString()) // Chỉ lấy những thông báo đã nổ (<= hiện tại)
+        .lte('timestamp', toLocalISOString(new Date())) // Chỉ lấy những thông báo đã nổ (<= hiện tại)
         .order('timestamp', { ascending: false })
         .limit(100);
 
@@ -55,7 +56,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         timestamp: n.timestamp,
         is_read: n.is_read ? 1 : 0,
         synced: 1,
-        createdAt: n.createdAt || n.created_at || new Date().toISOString()
+        createdAt: n.createdAt || n.created_at || toLocalISOString(new Date())
       }));
 
       const unreadCount = mappedNotifications.filter(n => n.is_read === 0).length;

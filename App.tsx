@@ -20,7 +20,7 @@ import {
 import { View, ActivityIndicator } from 'react-native';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { Colors } from './src/theme';
-import * as Notifications from 'expo-notifications';
+import * as Linking from 'expo-linking';
 import { initDB } from './src/database';
 import { useAuthStore } from './src/store/useAuthStore';
 import { syncService } from './src/services/syncService';
@@ -29,28 +29,21 @@ import NetInfo from '@react-native-community/netinfo';
 import { initNotificationListeners } from './src/services/notificationService';
 import { rescheduleAllReminders } from './src/services/schedulingService';
 
-// Handle notification taps when app is running
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
-// Khởi tạo DB ngay lập tức
-try {
-  initDB();
-} catch (e) {
-  console.warn("Lỗi khởi tạo DB:", e);
-}
+// NOTE: setNotificationHandler is already configured in notificationService.ts
+// Do NOT call it again here to avoid duplicate handler crash on production iOS
 
 export default function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
 
   useEffect(() => {
+    // Khởi tạo SQLite DB bên trong useEffect để đảm bảo native bridge đã sẵn sàng
+    // (Trên production iOS build, top-level initDB() có thể crash vì bridge chưa khởi tạo)
+    try {
+      initDB();
+    } catch (e) {
+      console.warn('Lỗi khởi tạo DB:', e);
+    }
+
     Font.loadAsync({
       Manrope_400Regular,
       Manrope_500Medium,
@@ -109,10 +102,24 @@ export default function App() {
     );
   }
 
+  const prefix = Linking.createURL('/');
+  const linking = {
+    prefixes: [prefix, 'remind-app://'],
+    config: {
+      screens: {
+        Main: {
+          screens: {
+            AIChat: 'ai-chat',
+          },
+        },
+      },
+    },
+  };
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <NavigationContainer>
+        <NavigationContainer linking={linking}>
           <StatusBar style="dark" backgroundColor={Colors.surface} />
           <AppNavigator />
         </NavigationContainer>

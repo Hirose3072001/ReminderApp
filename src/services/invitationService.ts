@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Reminder, upsertReminder } from '../database/queries';
+import { toLocalISOString } from '../utils/reminderUtils';
 import { useAuthStore } from '../store/useAuthStore';
 import { useNotificationStore } from '../store/useNotificationStore';
 
@@ -49,7 +50,7 @@ export const invitationService = {
           reminder_id: reminderId,
           reminder_data: reminderData,
           status: 'pending',
-          created_at: new Date().toISOString()
+          created_at: toLocalISOString(new Date())
         });
 
       if (error) {
@@ -82,8 +83,8 @@ export const invitationService = {
           ...reminderData,
           user_id: user.id, // Đổi sang ID người nhận
           synced: 0, // Đánh dấu chưa sync để syncService đẩy lên Cloud của người nhận
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: toLocalISOString(new Date()),
+          updatedAt: toLocalISOString(new Date()),
           completed: 0,
         };
         

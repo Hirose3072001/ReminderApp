@@ -47,7 +47,8 @@ export const TaskManagementScreen = () => {
   const groupedTasks = tasksOnly.reduce((acc: any, item) => {
     const targetDateStr = item.endTime || item.dueDate;
     if (!targetDateStr) return acc;
-    const date = targetDateStr.split('T')[0];
+    // Chuyển đổi chuỗi ISO (UTC) sang ngày địa phương trước khi lấy chuỗi yyyy-MM-dd
+    const date = format(new Date(targetDateStr), 'yyyy-MM-dd');
     if (!acc[date]) acc[date] = [];
     acc[date].push(item);
     return acc;

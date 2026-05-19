@@ -21,6 +21,20 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { format, isValid } from 'date-fns';
 import { CustomPicker, PickerOption } from '../components/ui/CustomPicker';
 import { WebDateSegmentInput } from '../components/ui/WebDateSegmentInput';
+import { Dimensions } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const GRID_PADDING = 40; // formContainer padding is 20, so 20 * 2 = 40
+const CARD_PADDING = 48; // ruleCard padding is 24, so 24 * 2 = 48
+const TOTAL_HORIZONTAL_PADDING = GRID_PADDING + CARD_PADDING;
+const DAY_BUTTON_GAP = 8;
+const MONTH_BUTTON_GAP = 8;
+
+// Calc width for 7 columns (Weekly)
+const itemWidth = (SCREEN_WIDTH - TOTAL_HORIZONTAL_PADDING - (DAY_BUTTON_GAP * 6)) / 7;
+
+// Calc width for 7 columns (Monthly)
+const monthItemWidth = (SCREEN_WIDTH - TOTAL_HORIZONTAL_PADDING - (MONTH_BUTTON_GAP * 6)) / 7;
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'EditReminderPreset'>;
@@ -42,7 +56,7 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
 
   const [name, setName] = useState(preset?.name ?? 'Bộ nhắc mới');
   const [rules, setRules] = useState<ReminderRule[]>(preset?.rules ?? [
-    { id: 'r-' + Date.now(), type: 'before_start', offsetValue: 15, offsetUnit: 'minutes', timeSlots: [] }
+    { id: 'r-' + Date.now(), timing: 'Trước khi bắt đầu', amount: '15', unit: 'Phút', frequency: 'none', repeatWeekDays: [], repeatMonthDays: [], timeSlots: [] }
   ]);
 
   const isDuplicateName = useMemo(() => {
@@ -81,9 +95,12 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
   const addRule = () => {
     const newRule: ReminderRule = {
       id: 'r-' + Date.now(),
-      type: 'before_start',
-      offsetValue: 15,
-      offsetUnit: 'minutes',
+      timing: 'Trước khi bắt đầu',
+      amount: '10',
+      unit: 'Phút',
+      frequency: 'none',
+      repeatWeekDays: [],
+      repeatMonthDays: [],
       timeSlots: []
     };
     setRules([...rules, newRule]);
@@ -137,24 +154,34 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
     return new Date();
   };
 
-  const getTimingText = (type: string) => {
-    switch (type) {
-      case 'before_start': return 'Trước khi bắt đầu';
-      case 'at_start': return 'Khi bắt đầu';
-      case 'before_end': return 'Trước khi kết thúc';
-      case 'at_end': return 'Khi kết thúc';
-      default: return 'Chọn thời điểm...';
-    }
-  };
+  // Helper to convert field names if needed (though we've aligned them now)
+  const updateRuleField = (id: string, field: keyof ReminderRule, value: any) => {
+    setRules(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      
+      let newValue = value;
+      // Enforce amount >= 1
+      if (field === 'amount') {
+        const num = parseInt(value, 10);
+        if (isNaN(num) || num <= 0) {
+          newValue = value === '' ? '' : '1'; 
+        } else {
+          newValue = num.toString();
+        }
+      }
 
-  const getTypeValue = (text: string): any => {
-    switch (text) {
-      case 'Trước khi bắt đầu': return 'before_start';
-      case 'Khi bắt đầu': return 'at_start';
-      case 'Trước khi kết thúc': return 'before_end';
-      case 'Khi kết thúc': return 'at_end';
-      default: return 'at_start';
-    }
+      const updatedRule = { ...r, [field]: newValue };
+
+      // Default 07:00 for large units or recurring frequencies
+      const isLargeUnit = updatedRule.unit === 'Ngày' || updatedRule.unit === 'Tuần' || updatedRule.unit === 'Tháng';
+      const isRecurring = updatedRule.frequency !== 'none';
+      
+      if ((isLargeUnit || isRecurring) && updatedRule.timeSlots.length === 0) {
+        updatedRule.timeSlots = ['07:00'];
+      }
+
+      return updatedRule;
+    }));
   };
 
   return (
@@ -198,8 +225,9 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
           )}
 
           {rules.map((rule, idx) => {
-             const showBeforeParams = rule.type === 'before_start' || rule.type === 'before_end';
-             const isDayUnit = rule.offsetUnit === 'days';
+             const showBeforeParams = rule.timing === 'Trước khi bắt đầu' || rule.timing === 'Trước khi kết thúc';
+             const isLargeUnit = rule.unit === 'Ngày' || rule.unit === 'Tuần' || rule.unit === 'Tháng';
+             const showTimeSlots = (isLargeUnit && showBeforeParams) || rule.frequency !== 'none';
 
              return (
               <View key={rule.id} style={styles.ruleCard}>
@@ -213,9 +241,9 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
                 <View style={{ marginTop: 16 }}>
                   <Text style={styles.subLabel}>Thời điểm</Text>
                   <CustomPicker
-                    value={getTimingText(rule.type)}
+                    value={rule.timing}
                     options={['Trước khi bắt đầu', 'Khi bắt đầu', 'Trước khi kết thúc', 'Khi kết thúc']}
-                    onSelect={(val) => updateRule(rule.id, { type: getTypeValue(val) })}
+                    onSelect={(val) => updateRuleField(rule.id, 'timing', val)}
                   />
                 </View>
 
@@ -225,32 +253,84 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
                       <Text style={styles.subLabel}>Giá trị</Text>
                       <TextInput
                         style={styles.numberInput}
-                        value={rule.offsetValue?.toString()}
-                        onChangeText={(val) => updateRule(rule.id, { offsetValue: parseInt(val) || 0 })}
+                        value={rule.amount}
+                        onChangeText={(val) => updateRuleField(rule.id, 'amount', val)}
                         keyboardType="numeric"
                       />
                     </View>
                     <View style={{ flex: 2 }}>
                       <Text style={styles.subLabel}>Đơn vị</Text>
-                      <View style={styles.pickerRow}>
-                        {[
-                          { label: 'Phút', value: 'minutes' },
-                          { label: 'Giờ', value: 'hours' },
-                          { label: 'Ngày', value: 'days' }
-                        ].map(opt => (
-                          <PickerOption 
-                            key={opt.value}
-                            label={opt.label} 
-                            selected={rule.offsetUnit === opt.value} 
-                            onPress={() => updateRule(rule.id, { offsetUnit: opt.value as any })} 
-                          />
-                        ))}
-                      </View>
+                      <CustomPicker 
+                        value={rule.unit}
+                        options={['Phút', 'Giờ', 'Ngày', 'Tuần', 'Tháng']}
+                        onSelect={(val) => {
+                          updateRuleField(rule.id, 'unit', val);
+                          if (val === 'Phút' || val === 'Giờ') {
+                            updateRuleField(rule.id, 'frequency', 'none');
+                          }
+                        }}
+                      />
                     </View>
                   </View>
                 )}
 
-                {isDayUnit && showBeforeParams && (
+                {showBeforeParams && isLargeUnit && (
+                  <View style={{ marginTop: 16 }}>
+                    <Text style={styles.subLabel}>Lặp lại</Text>
+                    <CustomPicker 
+                      value={rule.frequency === 'none' ? 'Không lặp' : rule.frequency === 'daily' ? 'Hàng ngày' : rule.frequency === 'weekly' ? 'Hàng tuần' : 'Hàng tháng'}
+                      options={['Không lặp', 'Hàng ngày', 'Hàng tuần', 'Hàng tháng']}
+                      onSelect={(val) => {
+                        const freqMap: any = { 'Không lặp': 'none', 'Hàng ngày': 'daily', 'Hàng tuần': 'weekly', 'Hàng tháng': 'monthly' };
+                        updateRuleField(rule.id, 'frequency', freqMap[val]);
+                      }}
+                    />
+                  </View>
+                )}
+
+                {rule.frequency === 'weekly' && (
+                  <View style={{ marginTop: 16 }}>
+                    <Text style={styles.subLabel}>Chọn thứ lặp lại</Text>
+                    <View style={styles.selectorGrid}>
+                      {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => (
+                        <TouchableOpacity
+                          key={day}
+                          style={[styles.selectorBtn, rule.repeatWeekDays.includes(day) && styles.selectorBtnActive]}
+                          onPress={() => {
+                            const current = rule.repeatWeekDays;
+                            const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day];
+                            updateRuleField(rule.id, 'repeatWeekDays', next);
+                          }}
+                        >
+                          <Text style={[styles.selectorText, rule.repeatWeekDays.includes(day) && styles.selectorTextActive]}>{day}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {rule.frequency === 'monthly' && (
+                  <View style={{ marginTop: 16 }}>
+                    <Text style={styles.subLabel}>Chọn ngày lặp lại</Text>
+                    <View style={styles.monthGrid}>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                        <TouchableOpacity
+                          key={day}
+                          style={[styles.monthBtn, rule.repeatMonthDays.includes(day) && styles.monthBtnActive]}
+                          onPress={() => {
+                            const current = rule.repeatMonthDays;
+                            const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day];
+                            updateRuleField(rule.id, 'repeatMonthDays', next.sort((a,b)=>a-b));
+                          }}
+                        >
+                          <Text style={[styles.monthText, rule.repeatMonthDays.includes(day) && styles.monthTextActive]}>{day}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {showTimeSlots && (
                   <View style={{ marginTop: 16 }}>
                     <View style={{ marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={styles.subLabel}>Giờ nhắc trong ngày</Text>
@@ -262,7 +342,7 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
                       {rule.timeSlots.map(time => (
                         <View key={time} style={styles.chip}>
                           <Text style={styles.chipText}>{time}</Text>
-                          <TouchableOpacity onPress={() => updateRule(rule.id, { timeSlots: rule.timeSlots.filter(t => t !== time) })}>
+                          <TouchableOpacity onPress={() => updateRuleField(rule.id, 'timeSlots', rule.timeSlots.filter(t => t !== time))}>
                             <MaterialIcons name="cancel" size={16} color={Colors.outline} />
                           </TouchableOpacity>
                         </View>
@@ -284,7 +364,7 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
                           onPress={() => {
                             const timeStr = format(webNewTimeSlot, 'HH:mm');
                             if (!rule.timeSlots.includes(timeStr)) {
-                              updateRule(rule.id, { timeSlots: [...rule.timeSlots, timeStr].sort() });
+                              updateRuleField(rule.id, 'timeSlots', [...rule.timeSlots, timeStr].sort());
                             }
                             setWebAddingTimeSlotRuleId(null);
                           }}
@@ -332,7 +412,7 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
                         const val = tempTimeSlot || format(new Date(), 'HH:mm');
                         const rule = rules.find(r => r.id === activeRuleId);
                         if (rule && !rule.timeSlots.includes(val)) {
-                          updateRule(activeRuleId, { timeSlots: [...rule.timeSlots, val].sort() });
+                          updateRuleField(activeRuleId, 'timeSlots', [...rule.timeSlots, val].sort());
                         }
                      }
                      setShowTimePicker(false);
@@ -359,7 +439,7 @@ export const EditReminderPresetScreen: React.FC<Props> = ({ navigation, route })
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
+  container: { flex: 1, backgroundColor: '#ffffff' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -406,7 +486,7 @@ const styles = StyleSheet.create({
     padding: 24,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceContainerHighest,
+    borderColor: Colors.surfaceContainerHighest || 'rgba(193, 198, 214, 0.3)',
   },
   ruleCardHeader: {
     flexDirection: 'row',
@@ -439,13 +519,21 @@ const styles = StyleSheet.create({
   },
   rowGroup: { flexDirection: 'row' },
   numberInput: {
-    backgroundColor: Colors.surfaceContainerLow || '#f3f3f4',
-    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    borderColor: '#E8F1FF',
+    borderWidth: 2,
+    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: FontSize.bodyMd,
-    fontFamily: FontFamily.interMedium,
+    height: 56,
+    paddingVertical: 0,
+    fontSize: FontSize.bodyLg,
+    fontFamily: FontFamily.interSemiBold,
     color: Colors.onSurface,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
   },
   pickerRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   pickerChip: {
@@ -570,5 +658,71 @@ const styles = StyleSheet.create({
   modalOptionActive: {
     color: Colors.primary,
     fontFamily: FontFamily.interBold,
+  },
+  selectorGrid: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    gap: DAY_BUTTON_GAP, 
+    justifyContent: 'space-between',
+    marginTop: 8 
+  },
+  selectorBtn: { 
+    width: itemWidth, 
+    height: itemWidth, 
+    borderRadius: 12, 
+    backgroundColor: '#ffffff', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#E8F1FF' 
+  },
+  selectorBtnActive: { 
+    backgroundColor: Colors.primary, 
+    borderColor: Colors.primary, 
+    elevation: 4, 
+    shadowColor: Colors.primary, 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 8 
+  },
+  selectorText: { 
+    fontFamily: FontFamily.interSemiBold, 
+    fontSize: 13, 
+    color: Colors.onSurfaceVariant 
+  },
+  selectorTextActive: { 
+    color: '#ffffff', 
+    fontWeight: 'bold' 
+  },
+  monthGrid: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    gap: MONTH_BUTTON_GAP, 
+    justifyContent: 'space-between', // Center by balancing gaps
+    marginTop: 8 
+  },
+  monthBtn: { 
+    width: monthItemWidth, 
+    height: monthItemWidth, 
+    borderRadius: 8, 
+    backgroundColor: '#ffffff', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#E8F1FF' 
+  },
+  monthBtnActive: { 
+    backgroundColor: Colors.primary, 
+    borderColor: Colors.primary, 
+    elevation: 3 
+  },
+  monthText: { 
+    fontFamily: FontFamily.interMedium, 
+    fontSize: 13, 
+    color: Colors.onSurfaceVariant 
+  },
+  monthTextActive: { 
+    color: '#ffffff', 
+    fontWeight: 'bold' 
   },
 });

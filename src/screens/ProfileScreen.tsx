@@ -10,6 +10,7 @@ import { RootStackParamList } from '../navigation/types';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { toLocalISOString } from '../utils/reminderUtils';
 
 export const ProfileScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -48,7 +49,7 @@ export const ProfileScreen = () => {
       full_name: fullName.trim(),
       job: job.trim(),
       phone: phone.trim(),
-      birthday: birthday.toISOString(),
+      birthday: toLocalISOString(birthday),
       ...updatedFields
     };
 

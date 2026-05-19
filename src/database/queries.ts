@@ -1,4 +1,5 @@
 import { getDB } from './index';
+import { toLocalISOString } from '../utils/reminderUtils';
 
 export interface Reminder {
   id: string;
@@ -60,7 +61,7 @@ export const upsertReminder = (reminder: Reminder) => {
         reminder.dueDate, reminder.endTime || null, reminder.completed,
         reminder.reminderTime || null, reminder.reminderRepeat || null,
         reminder.notificationId || null, reminder.reminderRules || null,
-        new Date().toISOString(), reminder.id
+        toLocalISOString(new Date()), reminder.id
       ]
     );
   } else {
@@ -75,7 +76,7 @@ export const updateReminder = (id: string, fields: Partial<Reminder>) => {
   const current = db.getFirstSync('SELECT * FROM reminders WHERE id = ?', [id]) as Reminder;
   if (!current) return;
 
-  const merged = { ...current, ...fields, updatedAt: new Date().toISOString() };
+  const merged = { ...current, ...fields, updatedAt: toLocalISOString(new Date()) };
   
   db.runSync(
     'UPDATE reminders SET user_id=?, type=?, title=?, description=?, priority=?, dueDate=?, endTime=?, reminderTime=?, reminderRepeat=?, completed=?, notificationId=?, reminderRules=?, synced=0, updatedAt=? WHERE id=?',
@@ -89,18 +90,18 @@ export const updateReminder = (id: string, fields: Partial<Reminder>) => {
 
 export const updateReminderStatus = (id: string, completed: number) => {
   const db = getDB();
-  db.runSync(`UPDATE reminders SET completed = ?, synced = 0, updatedAt = ? WHERE id = ?`, [completed, new Date().toISOString(), id]);
+  db.runSync(`UPDATE reminders SET completed = ?, synced = 0, updatedAt = ? WHERE id = ?`, [completed, toLocalISOString(new Date()), id]);
 };
 
 export const updateReminderDescription = (id: string, description: string) => {
   const db = getDB();
-  db.runSync(`UPDATE reminders SET description = ?, synced = 0, updatedAt = ? WHERE id = ?`, [description, new Date().toISOString(), id]);
+  db.runSync(`UPDATE reminders SET description = ?, synced = 0, updatedAt = ? WHERE id = ?`, [description, toLocalISOString(new Date()), id]);
 };
 
 export const deleteReminder = (id: string) => {
   const db = getDB();
   // Soft delete for sync
-  db.runSync(`UPDATE reminders SET isDeleted = 1, synced = 0, updatedAt = ? WHERE id = ?`, [new Date().toISOString(), id]);
+  db.runSync(`UPDATE reminders SET isDeleted = 1, synced = 0, updatedAt = ? WHERE id = ?`, [toLocalISOString(new Date()), id]);
 };
 
 export const getAllReminders = (userId: string): Reminder[] => {
@@ -111,7 +112,7 @@ export const getAllReminders = (userId: string): Reminder[] => {
 export const getRemindersByDate = (userId: string, dateString: string): Reminder[] => {
   const db = getDB();
   // dateString is YYYY-MM-DD
-  return db.getAllSync("SELECT * FROM reminders WHERE user_id = ? AND date(dueDate) = date(?) AND isDeleted = 0 ORDER BY dueDate ASC", [userId, dateString]) as Reminder[];
+  return db.getAllSync("SELECT * FROM reminders WHERE user_id = ? AND date(dueDate, 'localtime') = date(?) AND isDeleted = 0 ORDER BY dueDate ASC", [userId, dateString]) as Reminder[];
 };
 
 export const getUnsyncedReminders = (userId: string) => {
@@ -151,7 +152,7 @@ export const updateNotificationReadStatus = (id: string, isRead: number) => {
 
 export const getRecentNotifications = (userId: string, limit: number = 100): Notification[] => {
   const db = getDB();
-  const now = new Date().toISOString();
+  const now = toLocalISOString(new Date());
   // Chỉ lấy những thông báo có thời gian <= hiện tại (đã nổ) và chưa bị xóa
   return db.getAllSync(
     'SELECT * FROM notifications WHERE user_id = ? AND timestamp <= ? AND isDeleted = 0 ORDER BY timestamp DESC LIMIT ?', 

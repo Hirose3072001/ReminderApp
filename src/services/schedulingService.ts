@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { cancelTaskNotifications, scheduleNotification } from './notificationService';
-import { generateTriggersFromRules, getDeterministicNotifId } from '../utils/reminderUtils';
+import { generateTriggersFromRules, getDeterministicNotifId, toLocalISOString } from '../utils/reminderUtils';
 import { Reminder, Notification, getAllReminders } from '../database/queries';
 import { getDB } from '../database/index';
 
@@ -22,7 +22,7 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
     const db = getDB();
     db.runSync(
       `UPDATE notifications SET isDeleted = 1, synced = 0 WHERE reminder_id = ? AND is_read = 0 AND timestamp > ?`,
-      [reminder.id, new Date().toISOString()]
+      [reminder.id, toLocalISOString(new Date())]
     );
 
     // 3. Kiểm tra điều kiện cần thiết
@@ -43,23 +43,8 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
       return;
     }
 
-    // Parse datetime: nếu chuỗi thiếu timezone (ví dụ "2026-04-04T03:14:00"),
-    // JS parse như UTC, lệch 7h với timezone +07:00.
-    const parseLocalDateTime = (str: string): Date => {
-      // Nếu đã có 'Z' hoặc '+' để chỉ timezone → dùng trực tiếp
-      if (str.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(str)) {
-        return new Date(str);
-      }
-      // Chuỗi naive "2026-04-04T03:14:00" → parse như giờ địa phương
-      const offset = new Date().getTimezoneOffset(); // âm với UTC+7 → -420
-      const d = new Date(str);
-      const result = new Date(d.getTime() - offset * 60 * 1000);
-      result.setSeconds(0, 0); // Đưa về 00 giây và 000 mili giây
-      return result;
-    };
-
-    const startTime = parseLocalDateTime(dueDateStr);
-    const endTime = reminder.endTime ? parseLocalDateTime(reminder.endTime) : startTime;
+    const startTime = new Date(dueDateStr);
+    const endTime = reminder.endTime ? new Date(reminder.endTime) : startTime;
 
 
     // 4. Tính toán các thời điểm nhắc nhở dựa trên quy tắc (rules)
@@ -101,7 +86,7 @@ export const handleScheduling = async (reminder: Reminder): Promise<void> => {
         type: 'reminder',
         title: trigger.title,
         body: trigger.body,
-        timestamp: trigger.date.toISOString(),
+        timestamp: toLocalISOString(trigger.date),
         is_read: 0,
         synced: 0,
         isDeleted: 0,

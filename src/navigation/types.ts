@@ -18,7 +18,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Schedule: undefined;
   TaskManagement: undefined;
-  AIChat: undefined;
+  AIChat: { text?: string } | undefined;
   Notification: undefined;
   Settings: undefined;
 };

@@ -3,7 +3,7 @@
     "name": "RemindApp",
     "slug": "remind-app",
     "scheme": "remind-app",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/logoreminder_main.png",
     "userInterfaceStyle": "light",
@@ -15,13 +15,18 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.remindapp.app",
+      "bundleIdentifier": "com.minhtc.remindapp",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSUserNotificationUsageDescription": "Ứng dụng cần quyền thông báo để nhắc lịch công việc của bạn."
+        "NSUserNotificationUsageDescription": "Ứng dụng cần quyền thông báo để nhắc lịch công việc của bạn.",
+        "NSSpeechRecognitionUsageDescription": "Cho phép RemindApp sử dụng nhận dạng giọng nói.",
+        "NSMicrophoneUsageDescription": "Cho phép RemindApp sử dụng micro để ghi âm giọng nói.",
+        "NSPhotoLibraryUsageDescription": "Ứng dụng cần truy cập thư viện ảnh để bạn có thể tải lên và đính kèm hình ảnh.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.remindapp.app",
+      "package": "com.minhtc.remindapp",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logoreminder_foreground.png",
         "backgroundColor": "#E3F2FD"
@@ -29,7 +34,8 @@
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
-        "android.permission.SCHEDULE_EXACT_ALARM"
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -49,7 +55,17 @@
       "expo-sqlite",
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Cho phép RemindApp sử dụng micro để ghi âm giọng nói.",
+          "speechRecognitionPermission": "Cho phép RemindApp sử dụng nhận dạng giọng nói.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
+      ]
     ],
     "extra": {
       "eas": {

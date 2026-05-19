@@ -4,7 +4,7 @@ import { Notification } from '../database/queries';
 import { useAuthStore } from './useAuthStore';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
-import { getDeterministicNotifId } from '../utils/reminderUtils';
+import { getDeterministicNotifId, toLocalISOString } from '../utils/reminderUtils';
 
 // Lazy getter để tránh circular dependency:
 // useNotificationStore → syncService → schedulingService → notificationService → useNotificationStore
@@ -50,7 +50,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (!user) return;
 
     const reminderId = notifData.reminder_id || null;
-    const ts = notifData.timestamp || new Date().toISOString();
+    const ts = notifData.timestamp || toLocalISOString(new Date());
     
     // Tạo ID định danh nếu chưa có
     const finalId = notifData.id || getDeterministicNotifId(reminderId, ts) || uuidv4();
@@ -65,7 +65,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       timestamp: ts,
       is_read: 0,
       synced: 0,
-      createdAt: new Date().toISOString(),
+      createdAt: notifData.createdAt || notifData.created_at || toLocalISOString(new Date()),
       ...notifData,
     };
 
@@ -82,7 +82,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
     for (const data of notifDataList) {
       const reminderId = data.reminder_id || null;
-      const ts = data.timestamp || new Date().toISOString();
+      const ts = data.timestamp || toLocalISOString(new Date());
       const finalId = data.id || getDeterministicNotifId(reminderId, ts) || uuidv4();
 
       const newNotif: Notification = {
@@ -95,7 +95,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         timestamp: ts,
         is_read: 0,
         synced: 0,
-        createdAt: new Date().toISOString(),
+        createdAt: data.createdAt || data.created_at || toLocalISOString(new Date()),
         ...data,
       };
       Queries.insertNotification(newNotif);

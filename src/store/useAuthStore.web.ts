@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
+import { toLocalISOString } from '../utils/reminderUtils';
 
 // On Web: We don't import SQLite and we use window.localStorage
 
@@ -101,7 +102,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         .upsert({
           id: user.id,
           ...profileData,
-          updated_at: new Date().toISOString()
+          updated_at: toLocalISOString(new Date())
         })
         .select()
         .single();

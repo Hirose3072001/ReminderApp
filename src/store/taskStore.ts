@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { toLocalISOString } from '../utils/reminderUtils';
 
 export type Priority = 'high' | 'medium' | 'low';
 export type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly';
@@ -44,13 +45,13 @@ const STORAGE_KEY = '@remind_app_tasks';
 const serializeTasks = (tasks: Task[]): string => {
   return JSON.stringify(tasks.map(t => ({
     ...t,
-    dueDate: t.dueDate?.toISOString(),
-    endTime: t.endTime?.toISOString(),
-    createdAt: t.createdAt.toISOString(),
-    updatedAt: t.updatedAt.toISOString(),
+    dueDate: t.dueDate ? toLocalISOString(t.dueDate) : undefined,
+    endTime: t.endTime ? toLocalISOString(t.endTime) : undefined,
+    createdAt: toLocalISOString(t.createdAt),
+    updatedAt: toLocalISOString(t.updatedAt),
     reminder: t.reminder ? {
       ...t.reminder,
-      time: t.reminder.time.toISOString(),
+      time: toLocalISOString(t.reminder.time),
     } : undefined,
   })));
 };

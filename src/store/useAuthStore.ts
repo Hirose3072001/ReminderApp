@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 import * as Queries from '../database/queries';
+import { toLocalISOString } from '../utils/reminderUtils';
 // require('../services/syncService') đã được chuyển sang cơ chế subscriber trong syncService.ts để tránh circular dependency.
 
 export interface Profile {
@@ -132,7 +133,7 @@ export const useAuthStore = create<AuthState>()(
             .upsert({
               id: user.id,
               ...profileData,
-              updated_at: new Date().toISOString()
+              updated_at: toLocalISOString(new Date())
             })
             .select()
             .single();

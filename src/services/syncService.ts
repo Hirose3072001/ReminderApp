@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import { getDB } from '../database/index';
 import { Reminder, upsertReminder, insertReminder, Notification } from '../database/queries';
 import { handleScheduling } from './schedulingService';
+import { toLocalISOString } from '../utils/reminderUtils';
 
 // Lazy getter để tránh circular dependency: syncService ↔ useAuthStore
 const getAuthStore = () => require('../store/useAuthStore').useAuthStore;
@@ -189,7 +190,7 @@ export const syncService = {
             .upsert({
               id: userId,
               ...currentProfile,
-              updated_at: new Date().toISOString()
+              updated_at: toLocalISOString(new Date())
             });
 
           if (!error) {
@@ -283,7 +284,7 @@ export const syncService = {
         .from('notifications')
         .select('*')
         .eq('user_id', userId)
-        .lte('timestamp', new Date().toISOString())
+        .lte('timestamp', toLocalISOString(new Date()))
         .order('timestamp', { ascending: false })
         .limit(150);
 
@@ -292,7 +293,7 @@ export const syncService = {
         .from('notifications')
         .select('*')
         .eq('user_id', userId)
-        .gt('timestamp', new Date().toISOString())
+        .gt('timestamp', toLocalISOString(new Date()))
         .order('timestamp', { ascending: true })
         .limit(150);
 
@@ -337,14 +338,14 @@ export const syncService = {
                   body: `Bạn được mời tham gia: "${inv.reminder_data?.title || 'Công việc'}" bởi ${inv.sender_id}`,
                   reminder_id: inv.reminder_id,
                   id: `inv-${inv.id}`, 
-                  timestamp: inv.created_at || new Date().toISOString()
+                  timestamp: inv.created_at || toLocalISOString(new Date())
                });
             }
           }
         }
       }
 
-      await AsyncStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+      await AsyncStorage.setItem(LAST_SYNC_KEY, toLocalISOString(new Date()));
     } finally {
       this.isPulling = false;
     }
@@ -355,7 +356,7 @@ export const syncService = {
    */
   performAutoCleanup: function(userId: string) {
     const db = getDB();
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const sevenDaysAgo = toLocalISOString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
     
     console.log(`🧹 Running auto-cleanup (Policy 7 days) before ${sevenDaysAgo}`);
     

@@ -11,13 +11,14 @@ import {
   Switch,
   Alert,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontFamily, FontSize } from '../theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CustomPicker, PickerOption } from '../components/ui/CustomPicker';
 import { useReminderStore } from '../store/useReminderStore';
-import { generateTriggersFromRules } from '../utils/reminderUtils';
+import { generateTriggersFromRules, toLocalISOString } from '../utils/reminderUtils';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -126,17 +127,39 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const [hasReminder, setHasReminder] = useState(true);
   const [reminderConfig, setReminderConfig] = useState('Tùy chỉnh');
-  type LocalReminderRule = { id: string; timing: string; amount: string; unit: string; timeSlots: string[]; };
+  type LocalReminderRule = { 
+    id: string; 
+    timing: string; 
+    amount: string; 
+    unit: string; 
+    frequency: 'none' | 'daily' | 'weekly' | 'monthly';
+    repeatWeekDays: string[];
+    repeatMonthDays: number[];
+    timeSlots: string[]; 
+  };
 
   const [localReminderRules, setLocalReminderRules] = useState<LocalReminderRule[]>(() => {
     if (isEdit && editItem?.reminderRules) {
-      try { return JSON.parse(editItem.reminderRules); } catch (e) { console.error(e); }
+      try { 
+        const parsed = JSON.parse(editItem.reminderRules);
+        // Ensure backward compatibility
+        return parsed.map((r: any) => ({
+          ...r,
+          frequency: r.frequency || 'none',
+          repeatWeekDays: r.repeatWeekDays || [],
+          repeatMonthDays: r.repeatMonthDays || [],
+          timeSlots: r.timeSlots || []
+        }));
+      } catch (e) { console.error(e); }
     }
     return [{ 
       id: '1', 
       timing: isEvent ? 'Khi bắt đầu' : 'Khi kết thúc', 
-      amount: '0', 
+      amount: '1', 
       unit: 'Phút', 
+      frequency: 'none' as const,
+      repeatWeekDays: [],
+      repeatMonthDays: [],
       timeSlots: [] 
     }];
   });
@@ -151,11 +174,15 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
   const [webNewTimeSlot, setWebNewTimeSlot] = useState(new Date());
 
   const addReminderItem = () => {
-    setLocalReminderRules([...localReminderRules, { 
+    setReminderConfig('Tùy chỉnh');
+    setLocalReminderRules(prev => [...prev, { 
       id: Date.now().toString(), 
       timing: isEvent ? 'Khi bắt đầu' : 'Khi kết thúc', 
-      amount: '0', 
+      amount: '1', 
       unit: 'Phút', 
+      frequency: 'none',
+      repeatWeekDays: [],
+      repeatMonthDays: [],
       timeSlots: [] 
     }]);
   };
@@ -177,25 +204,67 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, [isEdit, editItem]);
   const updateReminderRule = (id: string, field: keyof LocalReminderRule, value: any) => {
-    setLocalReminderRules(localReminderRules.map(r => r.id === id ? { ...r, [field]: value } : r));
+    setReminderConfig('Tùy chỉnh');
+    setLocalReminderRules(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      let newValue = value;
+      
+      // Enforce amount >= 1
+      if (field === 'amount') {
+        const num = parseInt(value, 10);
+        if (isNaN(num) || num <= 0) {
+          newValue = value === '' ? '' : '1'; 
+        } else {
+          newValue = num.toString();
+        }
+      }
+
+      const updatedRule = { ...r, [field]: newValue };
+
+      // Default 07:00 for large units or recurring frequencies
+      const isLargeUnit = updatedRule.unit === 'Ngày' || updatedRule.unit === 'Tuần' || updatedRule.unit === 'Tháng';
+      const isRecurring = updatedRule.frequency !== 'none';
+      
+      if ((isLargeUnit || isRecurring) && updatedRule.timeSlots.length === 0) {
+        updatedRule.timeSlots = ['07:00'];
+      }
+
+      return updatedRule;
+    }));
   };
   const removeReminderRule = (id: string) => {
-    setLocalReminderRules(localReminderRules.filter(r => r.id !== id));
+    setReminderConfig('Tùy chỉnh');
+    setLocalReminderRules(prev => prev.filter(r => r.id !== id));
   };
 
   useEffect(() => {
     if (reminderConfig === 'Tùy chỉnh') return;
-    const preset = reminderPresets.find((p: any) => p.name === reminderConfig);
+    const preset = (reminderPresets as any[]).find((p: any) => p.name === reminderConfig);
     if (preset) {
-      const timingMap: any = { before_start: 'Trước khi bắt đầu', at_start: 'Khi bắt đầu', before_end: 'Trước khi kết thúc', at_end: 'Khi kết thúc' };
-      const unitMap: any = { minutes: 'Phút', hours: 'Giờ', days: 'Ngày' };
-      const newReminders: LocalReminderRule[] = preset.rules.map((rule: any) => ({
-        id: rule.id + '-' + Date.now(),
-        timing: timingMap[rule.type] || 'Trước khi bắt đầu',
-        amount: rule.offsetValue?.toString() || '0',
-        unit: unitMap[rule.offsetUnit || 'minutes'] || 'Phút',
-        timeSlots: rule.timeSlots || []
-      }));
+      // If the preset rule has the old structure, we map it, otherwise use it directly
+      const newReminders: LocalReminderRule[] = preset.rules.map((rule: any) => {
+        // Handle old structure mapping
+        if (rule.type) {
+          const timingMap: any = { before_start: 'Trước khi bắt đầu', at_start: 'Khi bắt đầu', before_end: 'Trước khi kết thúc', at_end: 'Khi kết thúc' };
+          const unitMap: any = { minutes: 'Phút', hours: 'Giờ', days: 'Ngày' };
+          return {
+            id: rule.id + '-' + Date.now(),
+            timing: timingMap[rule.type] || 'Trước khi bắt đầu',
+            amount: rule.offsetValue?.toString() || '0',
+            unit: unitMap[rule.offsetUnit || 'minutes'] || 'Phút',
+            frequency: 'none',
+            repeatWeekDays: [],
+            repeatMonthDays: [],
+            timeSlots: rule.timeSlots || []
+          };
+        }
+        
+        // New structure mapping
+        return {
+          ...rule,
+          id: rule.id + '-' + Date.now(),
+        };
+      });
       setLocalReminderRules(newReminders);
     }
   }, [reminderConfig, reminderPresets]);
@@ -329,7 +398,7 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
         .sort((a, b) => a.date.getTime() - b.date.getTime());
       
       const firstReminderTime = relevantTriggers.length > 0 ? relevantTriggers[0].date : (triggerTimes.length > 0 ? triggerTimes[0].date : null);
-      const reminderTimeStr = firstReminderTime ? format(firstReminderTime, "yyyy-MM-dd'T'HH:mm:ss") : null;
+      const reminderTimeStr = firstReminderTime ? toLocalISOString(firstReminderTime) : null;
 
       const futureTriggers = triggerTimes.filter(t => t.date.getTime() > now).sort((a, b) => a.date.getTime() - b.date.getTime());
       triggerTimes = futureTriggers;
@@ -340,8 +409,8 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
           title: title.trim(),
           description: finalDescription,
           priority: pVal,
-          dueDate: startTime.toISOString(),
-          endTime: endTime.toISOString(),
+          dueDate: toLocalISOString(startTime),
+          endTime: toLocalISOString(endTime),
           reminderTime: reminderTimeStr,
           reminderRules: hasReminder ? JSON.stringify(localReminderRules) : null,
         });
@@ -352,8 +421,8 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
           title: title.trim(),
           description: finalDescription,
           priority: pVal,
-          dueDate: startTime.toISOString(),
-          endTime: endTime.toISOString(),
+          dueDate: toLocalISOString(startTime),
+          endTime: toLocalISOString(endTime),
           reminderTime: reminderTimeStr,
           reminderRepeat: 'none',
           reminderRules: hasReminder ? JSON.stringify(localReminderRules) : null,
@@ -368,8 +437,8 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
           title: title.trim(),
           description: finalDescription,
           priority: pVal,
-          dueDate: startTime.toISOString(),
-          endTime: endTime.toISOString(),
+          dueDate: toLocalISOString(startTime),
+          endTime: toLocalISOString(endTime),
           reminderTime: reminderTimeStr,
           reminderRules: hasReminder ? JSON.stringify(localReminderRules) : null,
         };
@@ -442,12 +511,10 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
                 multiline numberOfLines={3} textAlignVertical="top"
               />
             </View>
-            {!isEvent && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Mức độ ưu tiên</Text>
-                <CustomPicker value={priority} options={['Cao', 'Trung bình', 'Thấp']} onSelect={setPriority} />
-              </View>
-            )}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Mức độ ưu tiên</Text>
+              <CustomPicker value={priority} options={['Cao', 'Trung bình', 'Thấp']} onSelect={setPriority} />
+            </View>
           </View>
 
           {isEvent && (
@@ -528,7 +595,7 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
               )}
             </View>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>{isEvent ? 'Kết thúc' : 'Hạn chót'}</Text>
+              <Text style={styles.label}>{isEvent ? 'Kết thúc' : 'Ngày hạn'}</Text>
               {Platform.OS === 'web' ? (
                 <WebDateSegmentInput
                   value={endTime}
@@ -605,7 +672,8 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
 
                 {localReminderRules.map((reminder, idx) => {
                   const showBeforeParams = reminder.timing === 'Trước khi bắt đầu' || reminder.timing === 'Trước khi kết thúc';
-                  const isDayUnit = reminder.unit === 'Ngày';
+                  const isLargeUnit = reminder.unit === 'Ngày' || reminder.unit === 'Tuần' || reminder.unit === 'Tháng';
+                  const showTimeSlots = (isLargeUnit && showBeforeParams) || reminder.frequency !== 'none';
 
                   return (
                     <View key={reminder.id} style={styles.reminderCard}>
@@ -633,16 +701,78 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
                           </View>
                           <View style={{ flex: 2 }}>
                             <Text style={styles.subLabel}>Đơn vị</Text>
-                            <View style={styles.pickerRow}>
-                              {['Phút', 'Giờ', 'Ngày'].map(opt => (
-                                <PickerOption key={opt} label={opt} selected={reminder.unit === opt} onPress={() => updateReminderRule(reminder.id, 'unit', opt)} />
-                              ))}
-                            </View>
+                            <CustomPicker 
+                              value={reminder.unit}
+                              options={['Phút', 'Giờ', 'Ngày', 'Tuần', 'Tháng']}
+                              onSelect={(val) => {
+                                updateReminderRule(reminder.id, 'unit', val);
+                                // If switching to unit < Day, reset frequency to none
+                                if (val === 'Phút' || val === 'Giờ') {
+                                  updateReminderRule(reminder.id, 'frequency', 'none');
+                                }
+                              }}
+                            />
                           </View>
                         </View>
                       )}
 
-                      {isDayUnit && showBeforeParams && (
+                      {showBeforeParams && isLargeUnit && (
+                        <View style={{ marginTop: 16 }}>
+                          <Text style={styles.subLabel}>Lặp lại</Text>
+                          <CustomPicker 
+                            value={reminder.frequency === 'none' ? 'Không lặp' : reminder.frequency === 'daily' ? 'Hàng ngày' : reminder.frequency === 'weekly' ? 'Hàng tuần' : 'Hàng tháng'}
+                            options={['Không lặp', 'Hàng ngày', 'Hàng tuần', 'Hàng tháng']}
+                            onSelect={(val) => {
+                              const freqMap: any = { 'Không lặp': 'none', 'Hàng ngày': 'daily', 'Hàng tuần': 'weekly', 'Hàng tháng': 'monthly' };
+                              updateReminderRule(reminder.id, 'frequency', freqMap[val]);
+                            }}
+                          />
+                        </View>
+                      )}
+
+                      {reminder.frequency === 'weekly' && (
+                        <View style={{ marginTop: 16 }}>
+                          <Text style={styles.subLabel}>Chọn thứ lặp lại</Text>
+                          <View style={styles.selectorGrid}>
+                            {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => (
+                              <TouchableOpacity
+                                key={day}
+                                style={[styles.selectorBtn, reminder.repeatWeekDays.includes(day) && styles.selectorBtnActive]}
+                                onPress={() => {
+                                  const current = reminder.repeatWeekDays;
+                                  const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day];
+                                  updateReminderRule(reminder.id, 'repeatWeekDays', next);
+                                }}
+                              >
+                                <Text style={[styles.selectorText, reminder.repeatWeekDays.includes(day) && styles.selectorTextActive]}>{day}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {reminder.frequency === 'monthly' && (
+                        <View style={{ marginTop: 16 }}>
+                          <Text style={styles.subLabel}>Chọn ngày lặp lại</Text>
+                          <View style={styles.monthGrid}>
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                              <TouchableOpacity
+                                key={day}
+                                style={[styles.monthBtn, reminder.repeatMonthDays.includes(day) && styles.monthBtnActive]}
+                                onPress={() => {
+                                  const current = reminder.repeatMonthDays;
+                                  const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day];
+                                  updateReminderRule(reminder.id, 'repeatMonthDays', next.sort((a,b)=>a-b));
+                                }}
+                              >
+                                <Text style={[styles.monthText, reminder.repeatMonthDays.includes(day) && styles.monthTextActive]}>{day}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {showTimeSlots && (
                         <View style={{ marginTop: 16 }}>
                           <View style={{ marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Text style={styles.subLabel}>Giờ nhắc trong ngày</Text>
@@ -650,9 +780,11 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation, route }) => {
                               setActiveTimeSlotReminderId(reminder.id); 
                               if (Platform.OS === 'web') {
                                 setWebAddingTimeSlotRuleId(reminder.id);
-                                setWebNewTimeSlot(new Date());
+                                const d = new Date();
+                                d.setHours(7, 0, 0, 0);
+                                setWebNewTimeSlot(d);
                               } else {
-                                setTempTimeSlot(format(new Date(), 'HH:mm'));
+                                setTempTimeSlot('07:00');
                                 setShowPicker(true); 
                                 setPickerTarget('timeSlot'); 
                                 setPickerMode('time'); 
@@ -825,13 +957,21 @@ const styles = StyleSheet.create({
   addReminderText: { fontFamily: FontFamily.interSemiBold, fontSize: FontSize.labelMd, color: Colors.primary },
   pickerRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   numberInput: {
-    backgroundColor: Colors.surfaceContainerLow || '#f3f3f4',
-    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    borderColor: '#E8F1FF',
+    borderWidth: 2,
+    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: FontSize.bodyMd,
-    fontFamily: FontFamily.interMedium,
+    height: 56,
+    paddingVertical: 0,
+    fontSize: FontSize.bodyLg,
+    fontFamily: FontFamily.interSemiBold,
     color: Colors.onSurface,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
   },
   chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
@@ -865,4 +1005,80 @@ const styles = StyleSheet.create({
   pickerDoneText: { color: Colors.primary, fontFamily: FontFamily.interBold, fontSize: 16 },
   cardBox: { backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#f3f3f4' },
   cardBoxTitle: { fontFamily: FontFamily.interSemiBold, fontSize: 12, color: Colors.outline, marginBottom: 12 },
+  selectorGrid: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingVertical: 4
+  },
+  selectorBtn: { 
+    width: (() => {
+      const sw = Math.min(Dimensions.get('window').width, 600);
+      const containerPad = 24 * 2; // formInner paddingHorizontal
+      const cardPad = 24 * 2; // reminderCard padding
+      const available = sw - containerPad - cardPad;
+      const gap = 8;
+      return Math.floor((available - gap * 6) / 7);
+    })(),
+    height: (() => {
+      const sw = Math.min(Dimensions.get('window').width, 600);
+      const containerPad = 24 * 2;
+      const cardPad = 24 * 2;
+      const available = sw - containerPad - cardPad;
+      const gap = 8;
+      return Math.floor((available - gap * 6) / 7);
+    })(),
+    alignItems: 'center', 
+    justifyContent: 'center',
+    borderRadius: 12, 
+    backgroundColor: Colors.surfaceContainerLow || '#f3f3f4', 
+    borderWidth: 1, 
+    borderColor: 'transparent' 
+  },
+  selectorBtnActive: { backgroundColor: Colors.primaryContainer, borderColor: Colors.primary },
+  selectorText: { fontFamily: FontFamily.interSemiBold, fontSize: 13, color: Colors.onSurfaceVariant },
+  selectorTextActive: { color: Colors.primary },
+  monthGrid: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    justifyContent: 'flex-start',
+    paddingVertical: 8,
+    width: '100%',
+    gap: 6,
+  },
+  monthBtn: { 
+    width: (() => {
+      const sw = Math.min(Dimensions.get('window').width, 600);
+      const containerPad = 24 * 2;
+      const cardPad = 24 * 2;
+      const available = sw - containerPad - cardPad;
+      const gap = 6;
+      return Math.floor((available - gap * 6) / 7);
+    })(),
+    height: (() => {
+      const sw = Math.min(Dimensions.get('window').width, 600);
+      const containerPad = 24 * 2;
+      const cardPad = 24 * 2;
+      const available = sw - containerPad - cardPad;
+      const gap = 6;
+      return Math.floor((available - gap * 6) / 7);
+    })(),
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderRadius: 8, 
+    backgroundColor: Colors.surfaceContainerLow || '#f3f3f4',
+  },
+  monthBtnActive: { 
+    backgroundColor: Colors.primary,
+  },
+  monthText: { 
+    fontFamily: FontFamily.interSemiBold, 
+    fontSize: 14, 
+    color: Colors.onSurface,
+    textAlign: 'center',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  monthTextActive: { color: '#ffffff' },
 });

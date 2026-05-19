@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, Platform, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { Colors, FontFamily, FontSize } from '../theme';
@@ -8,9 +8,10 @@ import { useReminderStore } from '../store/useReminderStore';
 import { MultiActionFAB } from '../components/ui/MultiActionFAB';
 import { ItemDetailPopup } from '../components/schedule/ItemDetailPopup';
 import { Reminder } from '../database/queries';
-import { format, addDays, startOfWeek, isSameDay, isToday } from 'date-fns';
+import { format, addDays, startOfWeek, isSameDay, isToday, differenceInWeeks } from 'date-fns';
 import { vi } from 'date-fns/locale/vi';
 import { useNavigation } from '@react-navigation/native';
+import { parseLocalDate, getPriorityInfo } from '../utils/reminderUtils';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 
@@ -33,6 +34,27 @@ export const ScheduleScreen = () => {
 
   const { reminders, loadReminders } = useReminderStore();
   const [now, setNow] = useState(new Date());
+  
+  const SCREEN_WIDTH = Dimensions.get('window').width;
+  const weekListRef = useRef<FlatList>(null);
+  const [isInternalScroll, setIsInternalScroll] = useState(false);
+
+  // Generate a range of 100 weeks (50 back, 50 forward)
+  const weekData = useMemo(() => {
+    const today = new Date();
+    const startOfAnchor = startOfWeek(today, { weekStartsOn: 1 });
+    const weeks = [];
+    for (let i = -50; i <= 50; i++) {
+      weeks.push(addDays(startOfAnchor, i * 7));
+    }
+    return weeks;
+  }, []);
+
+  const getWeekIndex = (dateStr: string) => {
+    const date = parseLocalDate(dateStr);
+    const startOfTarget = startOfWeek(date, { weekStartsOn: 1 });
+    return weekData.findIndex(w => isSameDay(w, startOfTarget));
+  };
 
   useEffect(() => {
     loadReminders();
@@ -41,10 +63,26 @@ export const ScheduleScreen = () => {
     return () => clearInterval(timer);
   }, [loadReminders]);
 
+  // Sync scroll position when selectedDate changes (external source like Month view)
+  useEffect(() => {
+    if (viewMode === 'week' && !isInternalScroll) {
+      const idx = getWeekIndex(selectedDate);
+      if (idx !== -1) {
+        // Use a small delay to ensure FlatList is ready
+        setTimeout(() => {
+          weekListRef.current?.scrollToIndex({ index: idx, animated: false });
+        }, 100);
+      }
+    }
+    setIsInternalScroll(false);
+  }, [selectedDate, viewMode]);
+
   const filteredReminders = reminders
     .filter(r => {
       const targetDateStr = (r.type === 'task' && r.endTime) ? r.endTime : r.dueDate;
-      return targetDateStr && targetDateStr.startsWith(selectedDate);
+      // Trích xuất ngày địa phương từ chuỗi UTC ISO
+      const localDateStr = targetDateStr ? format(new Date(targetDateStr), 'yyyy-MM-dd') : null;
+      return localDateStr === selectedDate;
     })
     .sort((a,b) => {
       const tA = (a.type === 'task' && a.endTime) ? a.endTime : a.dueDate;
@@ -92,7 +130,8 @@ export const ScheduleScreen = () => {
   reminders.forEach(r => {
     const targetDate = (r.type === 'task' && r.endTime) ? r.endTime : r.dueDate;
     if (targetDate) {
-      const dateStr = targetDate.split('T')[0];
+      // Chuyển đổi sang ngày địa phương để hiển thị chấm trên lịch
+      const dateStr = format(new Date(targetDate), 'yyyy-MM-dd');
       if (!markedDates[dateStr]) {
         markedDates[dateStr] = { dots: [] };
       }
@@ -121,21 +160,25 @@ export const ScheduleScreen = () => {
       medium: '#B8860B',
       low: '#2E7D32'
     };
-    const highlightColor = isTask ? (priorityColors[item.priority] || '#B8860B') : '#1A73E8';
+    const priorityColor = priorityColors[item.priority] || (isTask ? '#B8860B' : '#1A73E8');
+    const dominantColor = isTask ? priorityColor : '#1A73E8';
     const status = getStatusInfo(item);
 
     const stats = getSubtaskStats(item.description);
     const displayDesc = cleanDescription(item.description);
     const eventFormatFlag = !isTask ? getEventFormat(item.description) : '';
 
+    const prioInfo = getPriorityInfo(item.priority);
+    const eventIconColor = '#1A73E8';
+
     return (
       <TouchableOpacity 
-        style={[styles.agendaItem, { borderLeftColor: highlightColor, paddingVertical: 12 }]}
+        style={[styles.agendaItem, { borderLeftColor: dominantColor, paddingVertical: 12 }]}
         activeOpacity={0.8}
         onPress={() => setSelectedItem(item)}
       >
         <View style={styles.timeColumn}>
-          <MaterialIcons name={isTask ? "fact-check" : "event"} size={20} color={highlightColor} style={{ marginBottom: 4 }} />
+          <MaterialIcons name={isTask ? "fact-check" : "event"} size={20} color={dominantColor} style={{ marginBottom: 4 }} />
           <Text style={styles.timeText}>
             {isTask ? 'Hạn: ' : ''}
             {isTask && item.endTime 
@@ -145,30 +188,34 @@ export const ScheduleScreen = () => {
         </View>
         <View style={styles.infoColumn}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Text style={[styles.titleText, { color: highlightColor, flex: 1 }]}>{item.title}</Text>
-            {isTask && (
+            <Text style={[styles.titleText, { color: dominantColor, flex: 1 }]}>{item.title}</Text>
+            {isTask ? (
               <View style={{ backgroundColor: status.bgColor, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 8 }}>
                 <Text style={{ fontFamily: FontFamily.interBold, fontSize: 9, color: status.color }}>{status.label}</Text>
+              </View>
+            ) : (
+              <View style={{ backgroundColor: prioInfo.bgColor, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 8 }}>
+                <Text style={{ fontFamily: FontFamily.interBold, fontSize: 9, color: prioInfo.color }}>{prioInfo.label}</Text>
               </View>
             )}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-            <MaterialIcons name={isTask ? "assignment" : "stars"} size={14} color={highlightColor} />
-            <Text style={[styles.descText, { color: highlightColor, fontFamily: FontFamily.interBold, fontSize: 11 }]}>
+            <MaterialIcons name={isTask ? "assignment" : "stars"} size={14} color={isTask ? priorityColor : eventIconColor} />
+            <Text style={[styles.descText, { color: isTask ? priorityColor : eventIconColor, fontFamily: FontFamily.interBold, fontSize: 11 }]}>
               {isTask ? 'Công việc' : 'Sự kiện'}
             </Text>
           </View>
           
-          <Text style={[styles.descText, { marginTop: 4, color: highlightColor }]} numberOfLines={2}>
+          <Text style={[styles.descText, { marginTop: 4, color: dominantColor }]} numberOfLines={2}>
             <Text style={{ fontFamily: FontFamily.interBold }}>Mô tả: </Text>{displayDesc}
           </Text>
 
           {isTask ? (
-            <Text style={[styles.valText, { color: highlightColor, fontSize: 11, marginTop: 4, fontFamily: FontFamily.interBold }]}>
+            <Text style={[styles.valText, { color: dominantColor, fontSize: 11, marginTop: 4, fontFamily: FontFamily.interBold }]}>
               Nhiệm vụ cần làm({stats.completed}/{stats.total})
             </Text>
           ) : (
-            <Text style={[styles.descText, { marginTop: 4, fontSize: 11, color: highlightColor }]}>
+            <Text style={[styles.descText, { marginTop: 4, fontSize: 11, color: dominantColor }]}>
               <Text style={{ fontFamily: FontFamily.interBold }}>Hình thức: </Text>{eventFormatFlag}
             </Text>
           )}
@@ -180,15 +227,14 @@ export const ScheduleScreen = () => {
 
   // --- WEEK VIEW LOGIC (Daily Schedule) ---
   const renderWeekStrip = () => {
-    const selDateObj = new Date(selectedDate);
-    const startOfWk = startOfWeek(selDateObj, { weekStartsOn: 1 }); // Monday start
-    const days = Array.from({ length: 7 }).map((_, i) => addDays(startOfWk, i));
-
     const dayLabelsArr = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
-    return (
-      <View style={styles.weekStripContainer}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 6 }}>
+    const renderWeekItem = ({ item: weekStart }: { item: Date }) => {
+      const days = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
+      const selDateObj = parseLocalDate(selectedDate);
+
+      return (
+        <View style={{ width: SCREEN_WIDTH, flexDirection: 'row', justifyContent: 'space-between', gap: 6, paddingHorizontal: 16 }}>
           {days.map((day, idx) => {
              const isSelected = isSameDay(day, selDateObj);
              const isTodayReal = isToday(day);
@@ -201,7 +247,10 @@ export const ScheduleScreen = () => {
                    isSelected && styles.dayCardSelected,
                    !isSelected && isTodayReal && { borderWidth: 1, borderColor: Colors.primary }
                  ]}
-                 onPress={() => setSelectedDate(format(day, 'yyyy-MM-dd'))}
+                 onPress={() => {
+                   setIsInternalScroll(true);
+                   setSelectedDate(format(day, 'yyyy-MM-dd'));
+                 }}
                >
                  <Text style={[styles.dayCardLabel, isSelected && styles.dayCardLabelSelected, !isSelected && isTodayReal && { color: Colors.primary }]}>{dayLabel}</Text>
                  <Text style={[styles.dayCardDate, isSelected && styles.dayCardDateSelected, !isSelected && isTodayReal && { color: Colors.primary }]}>{format(day, 'd')}</Text>
@@ -210,6 +259,36 @@ export const ScheduleScreen = () => {
              );
           })}
         </View>
+      );
+    };
+
+    return (
+      <View style={styles.weekStripContainer}>
+        <FlatList
+          ref={weekListRef}
+          data={weekData}
+          keyExtractor={(item) => item.toISOString()}
+          renderItem={renderWeekItem}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => {
+            const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+            const newWeekStart = weekData[index];
+            const currentSelected = parseLocalDate(selectedDate);
+            const dayOfWeek = (currentSelected.getDay() + 6) % 7; // Convert to Mon-Sun (0-6)
+            const newSelected = addDays(newWeekStart, dayOfWeek);
+            
+            setIsInternalScroll(true);
+            setSelectedDate(format(newSelected, 'yyyy-MM-dd'));
+          }}
+          getItemLayout={(_, index) => ({
+            length: SCREEN_WIDTH,
+            offset: SCREEN_WIDTH * index,
+            index,
+          })}
+          initialScrollIndex={getWeekIndex(selectedDate) !== -1 ? getWeekIndex(selectedDate) : 50}
+        />
       </View>
     );
   };
@@ -217,7 +296,7 @@ export const ScheduleScreen = () => {
   const renderTimeline = () => {
     const hours = Array.from({ length: 25 }).map((_, i) => i); // 00:00 to 24:00
     const HOUR_HEIGHT = 100;
-    const isTodaySelected = isToday(new Date(selectedDate));
+    const isTodaySelected = isToday(parseLocalDate(selectedDate));
     const currentHour = now.getHours();
     const currentMinutes = now.getMinutes();
 
@@ -252,70 +331,75 @@ export const ScheduleScreen = () => {
                  {/* Container for events/tasks */}
                  <View style={styles.hourItemsContainer}>
                    {itemsInThisHour.map((item) => {
-                     const itemDate = new Date(item.dueDate!);
-                     const min = itemDate.getMinutes();
-                     
-                     const priorityColors: Record<string, string> = {
-                       high: '#C62828',
-                       medium: '#B8860B',
-                       low: '#2E7D32'
-                     };
-                     const isTask = item.type === 'task';
-                     const color = isTask ? (priorityColors[item.priority] || '#B8860B') : '#1A73E8';
-                     const bgColor = isTask ? `${color}15` : '#E8F0FE';
-                     const status = getStatusInfo(item);
+                      const itemDate = new Date(item.dueDate!);
+                      const min = itemDate.getMinutes();
+                      
+                      const priorityColors: Record<string, string> = {
+                        high: '#C62828',
+                        medium: '#B8860B',
+                        low: '#2E7D32'
+                      };
+                      const isTask = item.type === 'task';
+                      const priorityColor = priorityColors[item.priority] || (isTask ? '#B8860B' : '#1A73E8');
+                      const color = isTask ? priorityColor : '#1A73E8';
+                      const bgColor = isTask ? `${color}15` : '#E8F0FE';
+                      const status = getStatusInfo(item);
 
-                     const stats = getSubtaskStats(item.description);
-                     const displayDesc = cleanDescription(item.description);
-                     const eventFormatFlag = !isTask ? getEventFormat(item.description) : '';
+                      const stats = getSubtaskStats(item.description);
+                      const displayDesc = cleanDescription(item.description);
+                      const eventFormatFlag = !isTask ? getEventFormat(item.description) : '';
 
-                     return (
-                       <TouchableOpacity
-                         key={item.id}
-                         style={[styles.timelineItemWrap, { backgroundColor: bgColor, borderLeftColor: color, marginTop: 12, paddingVertical: 14 }]}
-                         activeOpacity={0.9}
-                         onPress={() => setSelectedItem(item)}
-                       >
-                         <View style={styles.timelineItemHeader}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.timelineItemTitle, { color, fontSize: 16 }]} numberOfLines={1}>
-                                {isTask ? 'Hạn: ' : ''}
-                                {isTask && item.endTime 
-                                  ? format(new Date(item.endTime), 'HH:mm') 
-                                  : format(new Date(item.dueDate!), 'HH:mm')} - {item.title}
-                              </Text>
-                            </View>
-                           {!isTask ? (
-                             <MaterialIcons name="event-available" size={18} color={color} />
-                           ) : (
-                             <View style={{ backgroundColor: status.bgColor, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 }}>
-                               <Text style={{ fontFamily: FontFamily.interBold, fontSize: 8, color: status.color }}>{status.label}</Text>
+                      const prioInfo = getPriorityInfo(item.priority);
+
+                      return (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={[styles.timelineItemWrap, { backgroundColor: bgColor, borderLeftColor: color, marginTop: 12, paddingVertical: 14 }]}
+                          activeOpacity={0.9}
+                          onPress={() => setSelectedItem(item)}
+                        >
+                          <View style={styles.timelineItemHeader}>
+                             <View style={{ flex: 1 }}>
+                               <Text style={[styles.timelineItemTitle, { color, fontSize: 16 }]} numberOfLines={1}>
+                                 {isTask ? 'Hạn: ' : ''}
+                                 {isTask && item.endTime 
+                                   ? format(new Date(item.endTime), 'HH:mm') 
+                                   : format(new Date(item.dueDate!), 'HH:mm')} - {item.title}
+                               </Text>
                              </View>
-                           )}
-                         </View>
-                         
-                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                            <MaterialIcons name={isTask ? "assignment" : "stars"} size={12} color={color} />
-                            <Text style={{ color, fontFamily: FontFamily.interBold, fontSize: 11 }}>
-                               {isTask ? 'Công việc' : 'Sự kiện'}
-                            </Text>
-                         </View>
+                            {isTask ? (
+                              <View style={{ backgroundColor: status.bgColor, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 }}>
+                                <Text style={{ fontFamily: FontFamily.interBold, fontSize: 8, color: status.color }}>{status.label}</Text>
+                              </View>
+                            ) : (
+                              <View style={{ backgroundColor: prioInfo.bgColor, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 }}>
+                                <Text style={{ fontFamily: FontFamily.interBold, fontSize: 8, color: prioInfo.color }}>{prioInfo.label}</Text>
+                              </View>
+                            )}
+                          </View>
+                          
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                             <MaterialIcons name={isTask ? "assignment" : "stars"} size={12} color={isTask ? priorityColor : '#1A73E8'} />
+                             <Text style={{ color: isTask ? priorityColor : '#1A73E8', fontFamily: FontFamily.interBold, fontSize: 11 }}>
+                                {isTask ? 'Công việc' : 'Sự kiện'}
+                             </Text>
+                          </View>
 
-                         <Text style={[styles.timelineItemTime, { color, marginTop: 4 }]} numberOfLines={2}>
-                           <Text style={{ fontFamily: FontFamily.interBold }}>Mô tả: </Text>{displayDesc}
-                         </Text>
+                          <Text style={[styles.timelineItemTime, { color, marginTop: 4 }]} numberOfLines={2}>
+                            <Text style={{ fontFamily: FontFamily.interBold }}>Mô tả: </Text>{displayDesc}
+                          </Text>
 
-                         {isTask ? (
-                            <Text style={{ color, fontFamily: FontFamily.interBold, fontSize: 11, marginTop: 6 }}>
-                               Nhiệm vụ cần làm({stats.completed}/{stats.total})
+                          {isTask ? (
+                             <Text style={{ color, fontFamily: FontFamily.interBold, fontSize: 11, marginTop: 6 }}>
+                                Nhiệm vụ cần làm({stats.completed}/{stats.total})
+                             </Text>
+                          ) : (
+                            <Text style={{ color: color, fontSize: 11, marginTop: 6 }}>
+                              <Text style={{ fontFamily: FontFamily.interBold }}>Hình thức: </Text>{eventFormatFlag}
                             </Text>
-                         ) : (
-                           <Text style={{ color, fontSize: 11, marginTop: 6 }}>
-                             <Text style={{ fontFamily: FontFamily.interBold }}>Hình thức: </Text>{eventFormatFlag}
-                           </Text>
-                         )}
-                       </TouchableOpacity>
-                     );
+                          )}
+                        </TouchableOpacity>
+                      );
                    })}
                  </View>
                </View>
@@ -323,19 +407,6 @@ export const ScheduleScreen = () => {
           })}
         </View>
 
-        {/* Stats Column */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-             <MaterialIcons name="bolt" size={24} color="#FF8C00" />
-             <Text style={styles.statValue}>85%</Text>
-             <Text style={styles.statLabel}>NĂNG SUẤT</Text>
-          </View>
-          <View style={styles.statCard}>
-             <MaterialIcons name="task-alt" size={24} color="#1A73E8" />
-             <Text style={styles.statValue}>{filteredReminders.length}</Text>
-             <Text style={styles.statLabel}>TỔNG SỐ</Text>
-          </View>
-        </View>
         <View style={{ height: 100 }} />
       </ScrollView>
     );
@@ -346,7 +417,10 @@ export const ScheduleScreen = () => {
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <MaterialIcons name="calendar-today" size={24} color={Colors.primary} style={{ marginRight: 8 }} />
-          <Text style={styles.headerTitle}>Hôm nay, {format(new Date(selectedDate), 'd MMMM, yyyy', { locale: vi })}</Text>
+          <Text style={styles.headerTitle}>
+            {selectedDate === format(new Date(), 'yyyy-MM-dd') ? 'Hôm nay, ' : ''}
+            {format(parseLocalDate(selectedDate), 'd MMMM, yyyy', { locale: vi })}
+          </Text>
         </View>
         <TouchableOpacity style={styles.filterBtn} onPress={() => setFilterVisible(true)}>
           <Text style={styles.filterText}>{viewMode === 'month' ? 'Tháng' : 'Tuần'}</Text>
@@ -363,6 +437,7 @@ export const ScheduleScreen = () => {
               monthFormat={'MMMM, yyyy'}
               markingType={'multi-dot'}
               markedDates={markedDates}
+              firstDay={1}
               theme={{
                 backgroundColor: Colors.surfaceContainerLowest || '#fff',
                 calendarBackground: Colors.surfaceContainerLowest || '#fff',
@@ -389,9 +464,11 @@ export const ScheduleScreen = () => {
           
           <View style={Platform.OS === 'web' ? styles.agendaWrapperWeb : { flex: 1 }}>
             <View style={styles.agendaHeader}>
-              <Text style={styles.agendaTitle}>Lịch trình hôm nay</Text>
+              <Text style={styles.agendaTitle}>
+                {selectedDate === format(new Date(), 'yyyy-MM-dd') ? 'Lịch trình hôm nay' : 'Lịch trình dự kiến'}
+              </Text>
               <Text style={styles.agendaDate}>
-                {format(new Date(selectedDate), 'EEEE', { locale: vi })}
+                {format(parseLocalDate(selectedDate), 'EEEE', { locale: vi })}
               </Text>
             </View>
 
@@ -544,7 +621,7 @@ const styles = StyleSheet.create({
 
   // Week View (Daily Schedule)
   dailyViewContainer: { flex: 1, backgroundColor: Colors.surface },
-  weekStripContainer: { marginBottom: 16, paddingTop: 8, paddingHorizontal: 16 },
+  weekStripContainer: { marginBottom: 16, paddingTop: 8 },
   dayCard: { flex: 1, height: 75, borderRadius: 16, backgroundColor: Colors.surfaceContainerLow || '#f3f3f4', alignItems: 'center', justifyContent: 'center' },
   dayCardSelected: { 
     backgroundColor: Colors.primary,

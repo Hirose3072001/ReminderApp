@@ -4,9 +4,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface ReminderRule {
   id: string;
-  type: 'before_start' | 'at_start' | 'before_end';
-  offsetValue?: number;
-  offsetUnit?: 'minutes' | 'hours' | 'days';
+  timing: 'Khi bắt đầu' | 'Khi kết thúc' | 'Trước khi bắt đầu' | 'Trước khi kết thúc';
+  amount: string;
+  unit: 'Phút' | 'Giờ' | 'Ngày' | 'Tuần' | 'Tháng';
+  frequency: 'none' | 'daily' | 'weekly' | 'monthly';
+  repeatWeekDays: string[];
+  repeatMonthDays: number[];
   timeSlots: string[]; // e.g. ["12:00", "20:00"]
 }
 
@@ -33,14 +36,22 @@ export const useSettingsStore = create<SettingsState>()(
           rules: [
             {
               id: 'r1',
-              type: 'before_start',
-              offsetValue: 2,
-              offsetUnit: 'days',
+              timing: 'Trước khi bắt đầu',
+              amount: '2',
+              unit: 'Ngày',
+              frequency: 'none',
+              repeatWeekDays: [],
+              repeatMonthDays: [],
               timeSlots: ['12:00', '20:00']
             },
             {
               id: 'r2',
-              type: 'at_start',
+              timing: 'Khi bắt đầu',
+              amount: '0',
+              unit: 'Phút',
+              frequency: 'none',
+              repeatWeekDays: [],
+              repeatMonthDays: [],
               timeSlots: []
             }
           ]

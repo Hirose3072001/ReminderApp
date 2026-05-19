@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView, 
   Platform,
   ActivityIndicator,
-  Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontFamily, FontSize, Spacing, Radius } from '../theme';
@@ -18,6 +17,8 @@ import { aiService } from '../services/aiService';
 import { useReminderStore } from '../store/useReminderStore';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { MainTabParamList } from '../navigation/types';
 
 interface Message {
   id: string;
@@ -53,18 +54,23 @@ export const AIChatScreen = () => {
   const flatListRef = useRef<FlatList>(null);
   const { addReminder } = useReminderStore();
 
-  const handleSend = async () => {
-    if (!inputText.trim()) return;
+
+  const route = useRoute<RouteProp<MainTabParamList, 'AIChat'>>();
+
+  const handleSend = async (overrideText?: string) => {
+    // If the event comes from the UI (e.g. GestureResponderEvent), it won't be a string
+    const textToProcess = typeof overrideText === 'string' ? overrideText : inputText;
+    if (!textToProcess.trim()) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: inputText.trim(),
+      text: textToProcess.trim(),
       sender: 'user',
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
-    setInputText('');
+    if (typeof overrideText !== 'string') setInputText('');
     setIsLoading(true);
     Keyboard.dismiss();
 
@@ -140,8 +146,8 @@ export const AIChatScreen = () => {
         title: message.actionData.params.title,
         description: message.actionData.params.description,
         priority: 'medium',
-        dueDate: message.actionData.params.startTime,
-        endTime: message.actionData.params.endTime,
+        dueDate: toLocalISOString(new Date(message.actionData.params.startTime)),
+        endTime: message.actionData.params.endTime ? toLocalISOString(new Date(message.actionData.params.endTime)) : undefined,
       });
 
       // Cập nhật trạng thái tin nhắn trong chat sau khi add thành công
@@ -181,6 +187,21 @@ export const AIChatScreen = () => {
       }, 100);
     }
   }, [messages, isLoading]);
+
+  const navigation = useNavigation();
+
+  useEffect(() => {
+    // Xử lý deep linking text truyền vào từ route.params
+    if (route.params?.text) {
+      const incomingText = route.params.text;
+      // Dọn bộ nhớ params ngay để sẵn sàng nhận lệnh mới, kể cả lệnh đó y chang lệnh cũ
+      navigation.setParams({ text: undefined });
+      
+      handleSend(incomingText);
+    }
+  }, [route.params?.text]);
+
+
 
   const renderItem = ({ item }: { item: Message }) => (
     <View style={[
@@ -293,6 +314,8 @@ export const AIChatScreen = () => {
           ) : null}
         />
 
+
+
         {/* Input Area */}
         <View style={styles.inputContainer}>
           <TextInput
@@ -302,7 +325,7 @@ export const AIChatScreen = () => {
             placeholder="Ví dụ: Lên lịch họp lúc 12h..."
             placeholderTextColor={Colors.onSurfaceVariant}
             multiline
-            maxLength={200}
+            maxLength={500}
           />
           <TouchableOpacity 
             style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
@@ -551,4 +574,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#2DCE89',
   },
+
 });

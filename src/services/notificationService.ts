@@ -6,7 +6,7 @@ import { RepeatType } from '../store/taskStore';
 // Lazy getter để tránh circular dependency:
 // notificationService → useNotificationStore → syncService → notificationService
 const getNotificationStore = () => require('../store/useNotificationStore').useNotificationStore;
-import { getDeterministicNotifId } from '../utils/reminderUtils';
+import { getDeterministicNotifId, toLocalISOString } from '../utils/reminderUtils';
 
 // Configure notification behavior
 if (Platform.OS !== 'web') {
@@ -108,7 +108,7 @@ export const scheduleNotification = async (
       content: {
         title,
         body,
-        data: { taskId, timestamp: triggerDate.toISOString() },
+        data: { taskId, timestamp: toLocalISOString(triggerDate) },
         sound: 'default',
       },
       trigger,
@@ -158,7 +158,7 @@ export const initNotificationListeners = () => {
     // Lưu vào store để đồng bộ lên Supabase
     // Sử dụng deterministic ID để tránh lặp bản ghi
     const reminderId = (data?.taskId as string) || (data?.reminderId as string) || null;
-    const ts = (data?.timestamp as string) || new Date().toISOString();
+    const ts = (data?.timestamp as string) || toLocalISOString(new Date());
     const deterministicId = getDeterministicNotifId(reminderId, ts);
 
     getNotificationStore().getState().addNotification({

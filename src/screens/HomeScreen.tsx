@@ -10,9 +10,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, FontFamily, FontSize, Spacing, Radius, Elevation } from '../theme';
-import { useTaskStore } from '../store/taskStore';
+import { useReminderStore } from '../store/useReminderStore';
 import { TaskCard } from '../components/task/TaskCard';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -22,16 +22,22 @@ type Props = {
 };
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
-  const { loadTasks, toggleComplete, deleteTask, getActiveTasks, getCompletedTasks } = useTaskStore();
-  const activeTasks = getActiveTasks();
-  const completedTasks = getCompletedTasks();
+  const { reminders, loadReminders, toggleStatus, removeReminder } = useReminderStore();
   const today = new Date();
 
-  useEffect(() => { loadTasks(); }, []);
+  useEffect(() => { 
+    loadReminders(); 
+  }, [loadReminders]);
+
+  const allTasks = reminders.filter(r => r.type === 'task');
+  const activeTasks = allTasks.filter(t => t.completed === 0);
+  const completedTasks = allTasks.filter(t => t.completed === 1);
 
   const upcomingToday = activeTasks.filter(t => {
-    if (!t.dueDate) return false;
-    return format(t.dueDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
+    const dueDateStr = t.dueDate;
+    if (!dueDateStr) return false;
+    // So sánh ngày địa phương của công việc với ngày hôm nay
+    return format(new Date(dueDateStr), 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
   });
 
   return (
@@ -88,10 +94,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         }
         renderItem={({ item }) => (
           <TaskCard
-            task={item}
-            onPress={() => (navigation as any).navigate('TaskDetail', { taskId: item.id })}
-            onToggleComplete={() => toggleComplete(item.id)}
-            onDelete={() => deleteTask(item.id)}
+            task={item as any}
+            onPress={() => (navigation as any).navigate('TaskDetail', { id: item.id })}
+            onToggleComplete={() => toggleStatus(item.id, item.completed)}
+            onDelete={() => removeReminder(item.id)}
           />
         )}
         ListEmptyComponent={
@@ -110,9 +116,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
               {completedTasks.slice(0, 5).map(task => (
                 <TaskCard
                   key={task.id}
-                  task={task}
-                  onPress={() => (navigation as any).navigate('TaskDetail', { taskId: task.id })}
-                  onToggleComplete={() => toggleComplete(task.id)}
+                  task={task as any}
+                  onPress={() => (navigation as any).navigate('TaskDetail', { id: task.id })}
+                  onToggleComplete={() => toggleStatus(task.id, task.completed)}
                 />
               ))}
             </View>
