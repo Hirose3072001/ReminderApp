@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.minhtc.remindapp",
-      "buildNumber": "2",
+      "buildNumber": "1",
       "infoPlist": {
         "NSUserNotificationUsageDescription": "Ứng dụng cần quyền thông báo để nhắc lịch công việc của bạn.",
         "NSSpeechRecognitionUsageDescription": "Cho phép RemindApp sử dụng nhận dạng giọng nói.",
