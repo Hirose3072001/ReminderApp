@@ -7,7 +7,13 @@
     "preview": {
       "distribution": "internal"
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://gzabogvssjxcqaexfqkf.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd6YWJvZ3Zzc2p4Y3FhZXhmcWtmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5MzczMDMsImV4cCI6MjA5MDUxMzMwM30.nTNWuVZnaZ3kVamsruLbDhBl_o0KIB4wBXWnf6NSX0s",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyD7Q_qEzdHKdJc8ChyFXuZsOAGZVZf6jvY"
+      }
+    }
   },
   "submit": {
     "production": {}
